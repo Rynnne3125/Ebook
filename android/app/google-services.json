@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "657175691442",
+    "firebase_url": "https://ebook-fdc02-default-rtdb.firebaseio.com",
+    "project_id": "ebook-fdc02",
+    "storage_bucket": "ebook-fdc02.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:657175691442:android:43825081640b3976d949ab",
+        "android_client_info": {
+          "package_name": "com.example.sachdientudemo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA49_93r5iK5nbY6TykssefQjrR6cp1SgY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
