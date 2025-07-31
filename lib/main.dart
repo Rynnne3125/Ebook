@@ -7,6 +7,7 @@ import 'pages/contact_page.dart';
 import 'utils/app_colors.dart';
 import 'utils/responsive_utils.dart';
 import 'widgets/floating_particles.dart';
+import 'services/ai_server_manager.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,6 +26,19 @@ void main() async {
     print('Firebase initialized successfully');
   } catch (e) {
     print('Firebase initialization error: $e');
+  }
+
+  // Khởi động AI Server tự động
+  try {
+    print('🤖 Initializing AI Server...');
+    final serverStarted = await AIServerManager.startServer();
+    if (serverStarted) {
+      print('✅ AI Server ready');
+    } else {
+      print('⚠️ AI Server not available - manual start required');
+    }
+  } catch (e) {
+    print('AI Server initialization error: $e');
   }
   
   runApp(const EBookMobileApp());

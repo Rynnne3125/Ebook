@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'dart:math' as math;
-import '../widgets/flip_book_3d.dart';
-import '../models/flipbook_page.dart';
 import '../utils/responsive_utils.dart';
 import '../widgets/heyzine_flipbook_widget.dart';
 import '../services/firestore_service.dart';
 import '../models/flipbook_model.dart';
+import '../widgets/unity_webgl_widget.dart';
+import '../widgets/ai_teaching_assistant.dart';
 
 class FlipBookReaderPage extends StatefulWidget {
   final String bookId;
@@ -34,11 +33,38 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
   bool useHeyzine = false;
   bool showAIObserver = false;
 
+  // Thêm variables cho AI Assistant
+  bool _showAIAssistant = true;
+  bool _isAIMinimized = false;
+  late AnimationController _aiAssistantController;
+  late Animation<Offset> _aiSlideAnimation;
+
   @override
   void initState() {
     super.initState();
     _initializeAnimations();
     _loadBook();
+    
+    // Initialize AI Assistant animation
+    _aiAssistantController = AnimationController(
+      duration: const Duration(milliseconds: 400),
+      vsync: this,
+    );
+    
+    _aiSlideAnimation = Tween<Offset>(
+      begin: const Offset(1.2, 0), // Slide từ phải thay vì trái
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _aiAssistantController,
+      curve: Curves.elasticOut,
+    ));
+    
+    // Show AI Assistant after a delay
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        _aiAssistantController.forward();
+      }
+    });
   }
 
   void _initializeAnimations() {
@@ -62,7 +88,6 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
     try {
       if (widget.book != null) {
         book = widget.book;
-        // Increment view count
         await _firestoreService.incrementViewCount(book!.id);
       } else {
         book = await _firestoreService.getBookWithPages(widget.bookId);
@@ -73,7 +98,7 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
       
       setState(() {
         isLoading = false;
-        useHeyzine = book?.heyzineUrl != null;
+        // Xóa useHeyzine, luôn dùng custom view
       });
     } catch (e) {
       print('Error loading book: $e');
@@ -86,43 +111,52 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      return const Scaffold(
-        backgroundColor: Color(0xFF0a0e27),
-        body: Center(
-          child: CircularProgressIndicator(color: Color(0xFF667eea)),
-        ),
-      );
+      return _buildLoadingScreen();
     }
 
     if (book == null) {
-      return Scaffold(
-        backgroundColor: const Color(0xFF0a0e27),
-        appBar: AppBar(
-          backgroundColor: Colors.transparent,
-          leading: IconButton(
-            onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
-          ),
-        ),
-        body: const Center(
-          child: Text(
-            'Không tìm thấy sách',
-            style: TextStyle(color: Colors.white, fontSize: 18),
-          ),
-        ),
-      );
+      return _buildErrorScreen();
     }
 
     return Scaffold(
       backgroundColor: const Color(0xFF0a0e27),
-      body: Column(
+      body: Stack(
         children: [
-          _buildAppBar(),
-          Expanded(
-            child: useHeyzine && book!.heyzineUrl != null
-                ? _buildHeyzineView()
-                : _buildCustomBookView(),
+          Column(
+            children: [
+              _buildAppBar(),
+              Expanded(
+                child: _buildHeyzineView(), // Sử dụng Heyzine view
+              ),
+            ],
           ),
+          // AI Assistant overlay với z-index cao
+          if (_showAIAssistant)
+            Positioned(
+              bottom: 20,
+              right: 20,
+              child: Material( // Wrap với Material để có elevation
+                elevation: 20, // Elevation cao để nổi lên trên
+                color: Colors.transparent,
+                child: SlideTransition(
+                  position: _aiSlideAnimation,
+                  child: Container(
+                    width: _isAIMinimized ? 60 : 300,
+                    height: _isAIMinimized ? 60 : 400,
+                    child: AITeachingAssistant(
+                      width: 300,
+                      height: 400,
+                      isMinimized: _isAIMinimized,
+                      onToggle: _toggleAIAssistant,
+                      currentPageContent: _getCurrentPageContent(),
+                      onReadPage: (content) {
+                        // Handle read page action
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -177,18 +211,18 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
           ),
           
           // Toggle between Heyzine and custom
-          if (book!.heyzineUrl != null)
-            IconButton(
-              onPressed: () {
-                setState(() {
-                  useHeyzine = !useHeyzine;
-                });
-              },
-              icon: Icon(
-                useHeyzine ? Icons.view_module : Icons.web,
-                color: Colors.white,
-              ),
-            ),
+          // if (book!.heyzineUrl != null)
+          //   IconButton(
+          //     onPressed: () {
+          //       setState(() {
+          //         useHeyzine = !useHeyzine;
+          //       });
+          //     },
+          //     icon: Icon(
+          //       useHeyzine ? Icons.view_module : Icons.web,
+          //       color: Colors.white,
+          //     ),
+          //   ),
           
           // AI Observer toggle
           _buildAIToggle(),
@@ -198,48 +232,40 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
   }
 
   Widget _buildAIToggle() {
-    return Container(
-      decoration: BoxDecoration(
-        color: showAIObserver 
-            ? const Color(0xFF667eea).withOpacity(0.2)
-            : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: const Color(0xFF667eea).withOpacity(0.3),
-        ),
+    return IconButton(
+      onPressed: () {
+        setState(() {
+          if (_showAIAssistant) {
+            _aiAssistantController.reverse().then((_) {
+              setState(() {
+                _showAIAssistant = false;
+              });
+            });
+          } else {
+            _showAIAssistant = true;
+            _aiAssistantController.forward();
+          }
+        });
+      },
+      icon: Icon(
+        _showAIAssistant ? Icons.smart_toy : Icons.smart_toy_outlined,
+        color: _showAIAssistant ? const Color(0xFF667eea) : Colors.white,
       ),
-      child: IconButton(
-        onPressed: () {
-          setState(() {
-            showAIObserver = !showAIObserver;
-          });
-          HapticFeedback.lightImpact();
-        },
-        icon: Icon(
-          Icons.psychology,
-          color: showAIObserver 
-              ? const Color(0xFF667eea)
-              : Colors.white.withOpacity(0.7),
-        ),
-      ),
+      tooltip: _showAIAssistant ? 'Ẩn AI Assistant' : 'Hiện AI Assistant',
     );
   }
 
   Widget _buildHeyzineView() {
     return Container(
-      width: double.infinity,
-      height: double.infinity,
+      margin: const EdgeInsets.all(16),
       child: ClipRRect(
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(20),
-          topRight: Radius.circular(20),
-        ),
+        borderRadius: BorderRadius.circular(20),
         child: HeyzineFlipbookWidget(
           heyzineUrl: book!.heyzineUrl!,
-          width: double.infinity,
-          height: double.infinity,
           onPageChanged: (page) {
-            print('Page changed to: $page');
+            setState(() {
+              currentPage = page;
+            });
           },
         ),
       ),
@@ -561,11 +587,198 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
     HapticFeedback.lightImpact();
   }
 
+  void _toggleAIAssistant() {
+    setState(() {
+      _isAIMinimized = !_isAIMinimized;
+    });
+  }
+
+  String _getCurrentPageContent() {
+    if (book == null || currentPage >= book!.pages.length) {
+      return "";
+    }
+    
+    // Giả sử bạn có content text trong page model
+    // Thay đổi theo cấu trúc dữ liệu thực tế của bạn
+    final page = book!.pages[currentPage];
+    return page.content ?? "Nội dung trang ${currentPage + 1}";
+  }
+
   @override
   void dispose() {
     _pageController.dispose();
+    _aiAssistantController.dispose();
     super.dispose();
   }
+
+  Widget _buildLoadingScreen() {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0a0e27),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF667eea), Color(0xFF764ba2)],
+                ),
+                borderRadius: BorderRadius.circular(40),
+              ),
+              child: const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  strokeWidth: 3,
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Đang tải sách...',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Vui lòng chờ trong giây lát',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.7),
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorScreen() {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0a0e27),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(50),
+                  border: Border.all(
+                    color: Colors.red.withOpacity(0.3),
+                    width: 2,
+                  ),
+                ),
+                child: const Icon(
+                  Icons.error_outline,
+                  size: 50,
+                  color: Colors.red,
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Không thể tải sách',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Sách không tồn tại hoặc đã bị xóa.\nVui lòng kiểm tra lại đường dẫn.',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.7),
+                  fontSize: 16,
+                  height: 1.5,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 32),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.arrow_back),
+                    label: const Text('Quay lại'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF667eea),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        isLoading = true;
+                      });
+                      _loadBook();
+                    },
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Thử lại'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Colors.white),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 

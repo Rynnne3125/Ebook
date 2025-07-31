@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'dart:html' as html;
 import 'dart:ui_web' as ui;
@@ -23,21 +25,31 @@ class _HeyzineFlipbookPlatformState extends State<HeyzineFlipbookPlatform> {
   void initState() {
     super.initState();
     viewId = 'heyzine-iframe-${DateTime.now().millisecondsSinceEpoch}';
-    _registerIframe();
+    _registerWebView();
   }
 
-  void _registerIframe() {
-    // Register iframe element
+  void _registerWebView() {
     ui.platformViewRegistry.registerViewFactory(
       viewId,
       (int viewId) {
+        // Thêm parameters để ẩn UI Heyzine
+        String modifiedUrl = widget.heyzineUrl;
+        if (!modifiedUrl.contains('?')) {
+          modifiedUrl += '?hide_ui=true&hide_logo=true&hide_toolbar=true';
+        } else {
+          modifiedUrl += '&hide_ui=true&hide_logo=true&hide_toolbar=true';
+        }
+        
         final iframe = html.IFrameElement()
-          ..src = widget.heyzineUrl
+          ..src = modifiedUrl
           ..style.border = 'none'
           ..style.width = '100%'
           ..style.height = '100%'
+          ..style.pointerEvents = 'auto' // Đảm bảo pointer events hoạt động
+          ..style.zIndex = '1' // Z-index thấp hơn AI Assistant
           ..allowFullscreen = true
-          ..setAttribute('allow', 'clipboard-write');
+          ..setAttribute('allow', 'clipboard-write')
+          ..setAttribute('scrolling', 'no');
         
         return iframe;
       },
@@ -51,4 +63,9 @@ class _HeyzineFlipbookPlatformState extends State<HeyzineFlipbookPlatform> {
     );
   }
 }
+
+
+
+
+
 

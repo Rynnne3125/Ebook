@@ -37,8 +37,15 @@ class _HeyzineFlipbookPlatformState extends State<HeyzineFlipbookPlatform> {
           onPageFinished: (String url) {
             // Inject CSS để ẩn UI không cần thiết
             controller.runJavaScript('''
-              document.querySelector('.heyzine-toolbar')?.style.setProperty('display', 'none', 'important');
-              document.querySelector('.heyzine-logo')?.style.setProperty('display', 'none', 'important');
+              var style = document.createElement('style');
+              style.innerHTML = `
+                .heyzine-toolbar, .heyzine-logo, .heyzine-branding,
+                [class*="heyzine"], [id*="heyzine"], .logo, .branding {
+                  display: none !important;
+                  visibility: hidden !important;
+                }
+              `;
+              document.head.appendChild(style);
             ''');
           },
         ),
@@ -51,5 +58,6 @@ class _HeyzineFlipbookPlatformState extends State<HeyzineFlipbookPlatform> {
     return WebViewWidget(controller: controller);
   }
 }
+
 
 

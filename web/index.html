@@ -49,6 +49,20 @@
   <!-- Custom WebRenderer Scripts -->
   <script src="js/three-renderer.js"></script>
   <script src="js/babylon-renderer.js"></script>
+
+  <!-- Unity WebGL Support -->
+  <script>
+    // Unity WebGL configuration
+    window.unityConfig = {
+      dataUrl: "assets/Build/WebGL/Build/WebGL.data",
+      frameworkUrl: "assets/Build/WebGL/Build/WebGL.framework.js",
+      codeUrl: "assets/Build/WebGL/Build/WebGL.wasm",
+      streamingAssetsUrl: "assets/Build/WebGL/StreamingAssets",
+      companyName: "DefaultCompany",
+      productName: "WebGL Convai",
+      productVersion: "0.1",
+    };
+  </script>
 </head>
 <body>
   <script>
