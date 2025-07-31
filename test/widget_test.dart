@@ -1,30 +1,28 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
+// Test for EBook Flutter App
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
 import 'package:sachdientudemo/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
+  testWidgets('App should start without errors', (WidgetTester tester) async {
     // Build our app and trigger a frame.
     await tester.pumpWidget(const EBookMobileApp());
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    // Verify that the app loads without errors
+    expect(find.byType(MaterialApp), findsOneWidget);
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    // Wait for any async operations to complete
+    await tester.pumpAndSettle();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // The app should have loaded successfully
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Main layout should be present', (WidgetTester tester) async {
+    await tester.pumpWidget(const EBookMobileApp());
+    await tester.pumpAndSettle();
+
+    // Should find the main scaffold
+    expect(find.byType(Scaffold), findsAtLeastNWidgets(1));
   });
 }

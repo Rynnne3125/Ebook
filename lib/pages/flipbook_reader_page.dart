@@ -4,7 +4,6 @@ import '../utils/responsive_utils.dart';
 import '../widgets/heyzine_flipbook_widget.dart';
 import '../services/firestore_service.dart';
 import '../models/flipbook_model.dart';
-import '../widgets/unity_webgl_widget.dart';
 import '../widgets/ai_teaching_assistant.dart';
 
 class FlipBookReaderPage extends StatefulWidget {
@@ -35,36 +34,12 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
 
   // Thêm variables cho AI Assistant
   bool _showAIAssistant = true;
-  bool _isAIMinimized = false;
-  late AnimationController _aiAssistantController;
-  late Animation<Offset> _aiSlideAnimation;
 
   @override
   void initState() {
     super.initState();
     _initializeAnimations();
     _loadBook();
-    
-    // Initialize AI Assistant animation
-    _aiAssistantController = AnimationController(
-      duration: const Duration(milliseconds: 400),
-      vsync: this,
-    );
-    
-    _aiSlideAnimation = Tween<Offset>(
-      begin: const Offset(1.2, 0), // Slide từ phải thay vì trái
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _aiAssistantController,
-      curve: Curves.elasticOut,
-    ));
-    
-    // Show AI Assistant after a delay
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
-        _aiAssistantController.forward();
-      }
-    });
   }
 
   void _initializeAnimations() {
@@ -120,45 +95,98 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
 
     return Scaffold(
       backgroundColor: const Color(0xFF0a0e27),
-      body: Stack(
+      body: Column(
         children: [
-          Column(
-            children: [
-              _buildAppBar(),
-              Expanded(
-                child: _buildHeyzineView(), // Sử dụng Heyzine view
-              ),
-            ],
+          _buildAppBar(),
+          Expanded(
+            child: ResponsiveUtils.isMobile(context)
+                ? _buildMobileLayout()
+                : _buildDesktopLayout(),
           ),
-          // AI Assistant overlay với z-index cao
-          if (_showAIAssistant)
-            Positioned(
-              bottom: 20,
-              right: 20,
-              child: Material( // Wrap với Material để có elevation
-                elevation: 20, // Elevation cao để nổi lên trên
-                color: Colors.transparent,
-                child: SlideTransition(
-                  position: _aiSlideAnimation,
-                  child: Container(
-                    width: _isAIMinimized ? 60 : 300,
-                    height: _isAIMinimized ? 60 : 400,
-                    child: AITeachingAssistant(
-                      width: 300,
-                      height: 400,
-                      isMinimized: _isAIMinimized,
-                      onToggle: _toggleAIAssistant,
-                      currentPageContent: _getCurrentPageContent(),
-                      onReadPage: (content) {
-                        // Handle read page action
-                      },
-                    ),
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
+    );
+  }
+
+  Widget _buildMobileLayout() {
+    return Column(
+      children: [
+        // Phần hiển thị sách (70% màn hình)
+        Expanded(
+          flex: 7,
+          child: _buildHeyzineView(),
+        ),
+        // Phần AI Assistant (30% màn hình)
+        if (_showAIAssistant)
+          Expanded(
+            flex: 3,
+            child: Container(
+              margin: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 15,
+                    spreadRadius: 2,
+                    offset: const Offset(0, -5),
+                  ),
+                ],
+              ),
+              child: AITeachingAssistant(
+                width: double.infinity,
+                height: double.infinity,
+                isMinimized: false,
+                onToggle: _toggleAIAssistant,
+                currentPageContent: _getCurrentPageContent(),
+                onReadPage: (content) {
+                  // Handle read page action
+                },
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildDesktopLayout() {
+    return Row(
+      children: [
+        // Phần hiển thị sách (70% màn hình)
+        Expanded(
+          flex: 7,
+          child: _buildHeyzineView(),
+        ),
+        // Phần AI Assistant (30% màn hình)
+        if (_showAIAssistant)
+          Expanded(
+            flex: 3,
+            child: Container(
+              margin: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 15,
+                    spreadRadius: 2,
+                    offset: const Offset(-5, 0),
+                  ),
+                ],
+              ),
+              child: AITeachingAssistant(
+                width: double.infinity,
+                height: double.infinity,
+                isMinimized: false,
+                onToggle: _toggleAIAssistant,
+                currentPageContent: _getCurrentPageContent(),
+                onReadPage: (content) {
+                  // Handle read page action
+                },
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -235,16 +263,7 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
     return IconButton(
       onPressed: () {
         setState(() {
-          if (_showAIAssistant) {
-            _aiAssistantController.reverse().then((_) {
-              setState(() {
-                _showAIAssistant = false;
-              });
-            });
-          } else {
-            _showAIAssistant = true;
-            _aiAssistantController.forward();
-          }
+          _showAIAssistant = !_showAIAssistant;
         });
       },
       icon: Icon(
@@ -589,7 +608,7 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
 
   void _toggleAIAssistant() {
     setState(() {
-      _isAIMinimized = !_isAIMinimized;
+      _showAIAssistant = !_showAIAssistant;
     });
   }
 
@@ -607,7 +626,6 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
   @override
   void dispose() {
     _pageController.dispose();
-    _aiAssistantController.dispose();
     super.dispose();
   }
 
