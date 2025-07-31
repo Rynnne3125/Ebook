@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+import 'package:just_audio/just_audio.dart';
 import '../utils/responsive_utils.dart';
 import '../widgets/heyzine_flipbook_widget.dart';
 import '../services/firestore_service.dart';
+import '../services/ai_service.dart';
 import '../models/flipbook_model.dart';
 import '../widgets/ai_teaching_assistant.dart';
 import '../models/teaching_script_model.dart';
@@ -27,6 +30,8 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
   late Animation<double> _pageAnimation;
   
   final FirestoreService _firestoreService = FirestoreService();
+  final FlutterTts _flutterTts = FlutterTts();
+  final AudioPlayer _audioPlayer = AudioPlayer();
   FlipBookModel? book;
   bool isLoading = true;
   int currentPage = 0;
@@ -48,6 +53,7 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
   void initState() {
     super.initState();
     _initializeAnimations();
+    _initializeTTS();
     _loadBook();
   }
 
@@ -66,6 +72,35 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
     ));
 
     _pageController.forward();
+  }
+
+  Future<void> _initializeTTS() async {
+    try {
+      // Configure TTS settings
+      await _flutterTts.setLanguage("vi-VN"); // Vietnamese
+      await _flutterTts.setSpeechRate(0.8); // Slightly slower for teaching
+      await _flutterTts.setVolume(1.0);
+      await _flutterTts.setPitch(1.0);
+
+      // Set completion handler for auto page advancement
+      _flutterTts.setCompletionHandler(() {
+        print('🎤 TTS completed');
+        setState(() {
+          _isPlayingScript = false;
+        });
+
+        // Auto advance to next page if auto-reading is enabled
+        if (_autoReadingEnabled && !_isPaused) {
+          Future.delayed(const Duration(seconds: 1), () {
+            _goToNextPage();
+          });
+        }
+      });
+
+      print('✅ TTS initialized successfully');
+    } catch (e) {
+      print('❌ TTS initialization error: $e');
+    }
   }
 
   Future<void> _loadBook() async {
@@ -722,16 +757,78 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
 
   Future<void> _playScriptWithAI(String script) async {
     try {
-      // This integrates with the AI Assistant's TTS functionality
-      // You can call the AI service directly or trigger through the assistant widget
+      print('🎤 Calling AI assistant to read script: ${script.substring(0, 50)}...');
 
-      // For now, simulate the duration based on script length
-      // In real implementation, this would call AIService.readPage() or similar
-      final estimatedDuration = (script.length / 10).ceil(); // ~10 chars per second
-      await Future.delayed(Duration(seconds: estimatedDuration));
+      // Call AI assistant to read the teaching script
+      final result = await AIService.readTeachingScript(
+        script: script,
+        pageNumber: _currentPageNumber,
+      );
+
+      if (result.containsKey('error')) {
+        print('❌ AI assistant error: ${result['error']}');
+        setState(() {
+          _isPlayingScript = false;
+        });
+        return;
+      }
+
+      // Get audio base64 from AI assistant
+      final audioBase64 = result['audio'];
+      if (audioBase64 != null) {
+        print('🔊 Playing audio from AI assistant...');
+        await _playAudioFromBase64(audioBase64);
+      } else {
+        print('❌ No audio received from AI assistant');
+        setState(() {
+          _isPlayingScript = false;
+        });
+      }
 
     } catch (e) {
-      print('Error playing script with AI: $e');
+      print('❌ Error calling AI assistant: $e');
+      setState(() {
+        _isPlayingScript = false;
+      });
+    }
+  }
+
+  Future<void> _playAudioFromBase64(String audioBase64) async {
+    try {
+      print('🎵 Setting up audio player...');
+
+      // Create data URL for audio
+      final dataUrl = 'data:audio/mp3;base64,$audioBase64';
+
+      // Set audio source
+      await _audioPlayer.setUrl(dataUrl);
+
+      // Listen for completion to auto advance page
+      _audioPlayer.playerStateStream.listen((state) {
+        if (state.processingState == ProcessingState.completed) {
+          print('🎵 Audio playback completed');
+          setState(() {
+            _isPlayingScript = false;
+          });
+
+          // Auto advance to next page if enabled
+          if (_autoReadingEnabled && !_isPaused) {
+            Future.delayed(const Duration(seconds: 1), () {
+              _goToNextPage();
+            });
+          }
+        }
+      });
+
+      // Play audio
+      print('▶️ Starting audio playback...');
+      await _audioPlayer.play();
+
+    } catch (e) {
+      print('❌ Error playing audio: $e');
+      setState(() {
+        _isPlayingScript = false;
+      });
     }
   }
 
@@ -779,20 +876,26 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
     }
   }
 
-  void _stopCurrentScript() {
+  void _stopCurrentScript() async {
     setState(() {
       _isPlayingScript = false;
       _isPaused = false;
     });
-    // TODO: Stop TTS/audio playback
+    await _flutterTts.stop();
+    await _audioPlayer.stop();
+    print('🛑 Audio stopped');
   }
 
-  void _pauseCurrentScript() {
-    // TODO: Pause TTS/audio playback
+  void _pauseCurrentScript() async {
+    await _flutterTts.pause();
+    await _audioPlayer.pause();
+    print('⏸️ Audio paused');
   }
 
-  void _resumeCurrentScript() {
-    // TODO: Resume TTS/audio playback
+  void _resumeCurrentScript() async {
+    // Resume audio player
+    await _audioPlayer.play();
+    print('▶️ Audio resumed');
   }
 
   void _goToNextPage() {
@@ -847,6 +950,7 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
   @override
   void dispose() {
     _pageController.dispose();
+    _flutterTts.stop(); // Stop TTS when disposing
     super.dispose();
   }
 

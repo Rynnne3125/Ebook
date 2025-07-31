@@ -154,6 +154,37 @@ def read_page():
         print(f"Read page error: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 
+@app.route('/read-teaching-script', methods=['POST'])
+def read_teaching_script():
+    """Endpoint để đọc teaching script với voice assistant"""
+    try:
+        data = request.json
+        script = data.get('script', '')
+        page_number = data.get('pageNumber', 1)
+
+        if not script:
+            return jsonify({'error': 'No script provided'}), 400
+
+        print(f"🎤 Reading teaching script for page {page_number}")
+        print(f"📖 Script length: {len(script)} characters")
+
+        # Tạo audio với Edge TTS
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        audio_base64 = loop.run_until_complete(generate_audio_base64(clean_text(script), voice="vi-VN-HoaiMyNeural"))
+        loop.close()
+
+        return jsonify({
+            'success': True,
+            'audio': audio_base64,
+            'pageNumber': page_number,
+            'scriptLength': len(script)
+        })
+
+    except Exception as e:
+        print(f"❌ Error in read_teaching_script: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({'status': 'healthy'})

@@ -81,11 +81,42 @@ class AIService {
         Uri.parse('$baseUrl/health'),
         headers: {'Content-Type': 'application/json'},
       ).timeout(const Duration(seconds: 5));
-      
+
       return response.statusCode == 200;
     } catch (e) {
       print('Health check failed: $e');
       return false;
+    }
+  }
+
+  static Future<Map<String, dynamic>> readTeachingScript({
+    required String script,
+    required int pageNumber,
+  }) async {
+    try {
+      print('🎤 Calling AI assistant to read teaching script for page $pageNumber');
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/read-teaching-script'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'script': script,
+          'pageNumber': pageNumber,
+        }),
+      ).timeout(const Duration(seconds: 30));
+
+      if (response.statusCode == 200) {
+        final result = jsonDecode(response.body);
+        print('✅ AI assistant responded with audio for page $pageNumber');
+        return result;
+      } else {
+        throw Exception('Failed to read teaching script: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Error calling AI assistant: $e');
+      return {'error': e.toString()};
     }
   }
 }
