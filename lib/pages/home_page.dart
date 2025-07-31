@@ -134,6 +134,15 @@ class _HomePageState extends State<HomePage>
                 ),
         ],
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          Navigator.pushNamed(context, '/admin');
+        },
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.admin_panel_settings),
+        label: const Text('Admin'),
+      ),
     );
   }
 

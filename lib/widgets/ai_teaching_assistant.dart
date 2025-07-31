@@ -15,6 +15,15 @@ class AITeachingAssistant extends StatefulWidget {
   final String? currentPageContent;
   final Function(String)? onReadPage;
 
+  // Voice control parameters
+  final bool? isAutoReading;
+  final bool? isPlaying;
+  final bool? isPaused;
+  final VoidCallback? onToggleAutoReading;
+  final VoidCallback? onPlayPause;
+  final VoidCallback? onNextPage;
+  final VoidCallback? onPreviousPage;
+
   const AITeachingAssistant({
     super.key,
     this.width = 300,
@@ -23,6 +32,13 @@ class AITeachingAssistant extends StatefulWidget {
     this.onToggle,
     this.currentPageContent,
     this.onReadPage,
+    this.isAutoReading,
+    this.isPlaying,
+    this.isPaused,
+    this.onToggleAutoReading,
+    this.onPlayPause,
+    this.onNextPage,
+    this.onPreviousPage,
   });
 
   @override
@@ -619,28 +635,66 @@ class _AITeachingAssistantState extends State<AITeachingAssistant>
   }
 
   Widget _buildQuickActions() {
-    return Container(
-      height: 50,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Row(
-        children: [
-          _buildQuickAction(
-            icon: Icons.play_arrow,
-            label: "Đọc trang",
-            onTap: (_isProcessing || !_isAIConnected) ? null : _readCurrentPage,
+    return Column(
+      children: [
+        // Voice Controls Row
+        if (widget.isAutoReading != null)
+          Container(
+            height: 50,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                _buildQuickAction(
+                  icon: widget.isAutoReading! ? Icons.auto_stories : Icons.auto_stories_outlined,
+                  label: "Auto",
+                  onTap: widget.onToggleAutoReading,
+                  isActive: widget.isAutoReading!,
+                ),
+                _buildQuickAction(
+                  icon: widget.isPaused! ? Icons.play_arrow : Icons.pause,
+                  label: widget.isPaused! ? "Play" : "Pause",
+                  onTap: widget.onPlayPause,
+                  isActive: widget.isPlaying!,
+                ),
+                _buildQuickAction(
+                  icon: Icons.skip_previous,
+                  label: "Prev",
+                  onTap: widget.onPreviousPage,
+                ),
+                _buildQuickAction(
+                  icon: Icons.skip_next,
+                  label: "Next",
+                  onTap: widget.onNextPage,
+                ),
+              ],
+            ),
           ),
-          _buildQuickAction(
-            icon: Icons.refresh,
-            label: "Kết nối",
-            onTap: _isProcessing ? null : _checkAIConnection,
+
+        // Original Actions Row
+        Container(
+          height: 50,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              _buildQuickAction(
+                icon: Icons.play_arrow,
+                label: "Đọc trang",
+                onTap: (_isProcessing || !_isAIConnected) ? null : _readCurrentPage,
+              ),
+              _buildQuickAction(
+                icon: Icons.refresh,
+                label: "Kết nối",
+                onTap: _isProcessing ? null : _checkAIConnection,
+              ),
+              _buildQuickAction(
+                icon: Icons.restart_alt,
+                label: "Restart",
+                onTap: _isProcessing ? null : _restartAIServer,
+              ),
+            ],
           ),
-          _buildQuickAction(
-            icon: Icons.restart_alt,
-            label: "Restart",
-            onTap: _isProcessing ? null : _restartAIServer,
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -648,6 +702,7 @@ class _AITeachingAssistantState extends State<AITeachingAssistant>
     required IconData icon,
     required String label,
     required VoidCallback? onTap,
+    bool isActive = false,
   }) {
     return Expanded(
       child: Material(
@@ -659,8 +714,13 @@ class _AITeachingAssistantState extends State<AITeachingAssistant>
             margin: const EdgeInsets.symmetric(horizontal: 4),
             padding: const EdgeInsets.symmetric(vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(onTap != null ? 0.1 : 0.05),
+              color: isActive
+                  ? Colors.blue.withOpacity(0.3)
+                  : Colors.white.withOpacity(onTap != null ? 0.1 : 0.05),
               borderRadius: BorderRadius.circular(8),
+              border: isActive
+                  ? Border.all(color: Colors.blue.withOpacity(0.5), width: 1)
+                  : null,
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,

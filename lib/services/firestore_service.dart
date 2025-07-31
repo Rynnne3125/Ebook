@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/flipbook_model.dart';
+import '../models/teaching_script_model.dart';
 
 class FirestoreService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -103,18 +104,28 @@ class FirestoreService {
             .toList());
   }
 
-  // Get featured books (high rating and bookmark count)
+  // Get featured books (all books, newest first)
   Stream<List<FlipBookModel>> getFeaturedBooks({int limit = 10}) {
     try {
       return _firestore
           .collection('books')
           .where('isPublished', isEqualTo: true)
-          .orderBy('viewCount', descending: true)
           .limit(limit)
           .snapshots()
-          .map((snapshot) => snapshot.docs
-              .map((doc) => FlipBookModel.fromFirestore(doc))
-              .toList());
+          .map((snapshot) {
+            print('📚 Found ${snapshot.docs.length} books in Firestore:');
+            for (var doc in snapshot.docs) {
+              final data = doc.data() as Map<String, dynamic>;
+              final pages = data['pages'] as List?;
+              print('   📖 ${doc.id}: ${data['title']} (${pages?.length ?? 0} pages)');
+              if (doc.id == 'f60f20ba-e6fd-45af-b804-fa294d58fc55') {
+                print('   🎯 FOUND TARGET BOOK!');
+              }
+            }
+            return snapshot.docs
+                .map((doc) => FlipBookModel.fromFirestore(doc))
+                .toList();
+          });
     } catch (e) {
       print('Error getting featured books: $e');
       // Return local fallback data
@@ -295,6 +306,41 @@ class FirestoreService {
     }
   }
 
+  // Save book from backend response with teaching scripts
+  Future<String?> saveBookFromBackend(Map<String, dynamic> backendResponse) async {
+    try {
+      final bookData = {
+        'title': backendResponse['title'] ?? '',
+        'author': backendResponse['author'] ?? '',
+        'description': backendResponse['description'] ?? '',
+        'subject': backendResponse['subject'] ?? '',
+        'grade': backendResponse['grade'] ?? '8',
+        'chapter': backendResponse['chapter'] ?? 1,
+        'heyzineUrl': backendResponse['flipbook_url'] ?? '',
+        'coverImageUrl': backendResponse['heyzine_data']?['thumbnail_url'] ?? '',
+        'tags': List<String>.from(backendResponse['tags'] ?? []),
+        'rating': 0.0,
+        'viewCount': 0,
+        'bookmarkCount': 0,
+        'isPublished': true,
+        'pages': backendResponse['pages'] ?? [],
+        'total_pages': backendResponse['total_pages'] ?? 0,
+        'pdf_url': backendResponse['pdf_url'] ?? '',
+        'created_at': backendResponse['created_at'] ?? DateTime.now().toIso8601String(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      final docRef = await _firestore.collection('books').add(bookData);
+      print('✅ Book saved to Firestore with ID: ${docRef.id}');
+      return docRef.id;
+
+    } catch (e) {
+      print('Error saving book from backend: $e');
+      return null;
+    }
+  }
+
   // Update view count
   Future<void> incrementViewCount(String bookId) async {
     await _firestore.collection('books').doc(bookId).update({
@@ -340,6 +386,64 @@ class FirestoreService {
       });
     } catch (e) {
       print('Error adding book: $e');
+    }
+  }
+
+  // Get EBook with teaching scripts
+  Future<EBook?> getEBookWithScripts(String bookId) async {
+    try {
+      print('🔍 Searching for book with ID: $bookId');
+
+      final doc = await _firestore.collection('books').doc(bookId).get();
+
+      if (!doc.exists) {
+        print('❌ Book not found: $bookId');
+        return null;
+      }
+
+      final data = doc.data()!;
+      print('📄 Found book with ${data['pages'] != null ? (data['pages'] as List).length : 0} pages');
+
+      // Parse pages with teaching scripts
+      List<BookPage> pages = [];
+      if (data['pages'] != null) {
+        final pagesData = List<Map<String, dynamic>>.from(data['pages']);
+
+        for (var pageData in pagesData) {
+          TeachingScript? teachingScript;
+
+          if (pageData['teaching_script'] != null) {
+            teachingScript = TeachingScript.fromJson(
+              Map<String, dynamic>.from(pageData['teaching_script'])
+            );
+          }
+
+          pages.add(BookPage(
+            pageNumber: pageData['page_number'] ?? 1,
+            content: pageData['content'] ?? '',
+            teachingScript: teachingScript,
+          ));
+        }
+      }
+
+      return EBook(
+        id: doc.id,
+        title: data['title'] ?? '',
+        author: data['author'] ?? '',
+        subject: data['subject'] ?? '',
+        pdfUrl: data['pdf_url'] ?? '',
+        flipbookUrl: data['heyzineUrl'] ?? '',
+        pages: pages,
+        totalPages: data['total_pages'] ?? pages.length,
+        createdAt: data['created_at'] != null
+            ? DateTime.parse(data['created_at'])
+            : DateTime.now(),
+        heyzineData: data['heyzine_data'],
+      );
+
+    } catch (e) {
+      print('Error getting EBook with scripts: $e');
+      return null;
     }
   }
 }

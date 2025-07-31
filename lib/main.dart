@@ -1,9 +1,11 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'pages/home_page.dart';
 import 'pages/contact_page.dart';
+import 'pages/admin_page.dart';
 import 'utils/app_colors.dart';
 import 'utils/responsive_utils.dart';
 import 'widgets/floating_particles.dart';
@@ -31,14 +33,17 @@ void main() async {
   // Khởi động AI Server tự động
   try {
     print('🤖 Initializing AI Server...');
+    print('📁 Working directory: ${Directory.current.path}');
+
     final serverStarted = await AIServerManager.startServer();
     if (serverStarted) {
       print('✅ AI Server ready');
     } else {
       print('⚠️ AI Server not available - manual start required');
+      print('💡 To start manually, run: python assistant.py');
     }
   } catch (e) {
-    print('AI Server initialization error: $e');
+    print('❌ AI Server initialization error: $e');
   }
   
   runApp(const EBookMobileApp());
@@ -71,6 +76,9 @@ class EBookMobileApp extends StatelessWidget {
         platform: TargetPlatform.fuchsia,
       ),
       home: const MainLayout(),
+      routes: {
+        '/admin': (context) => const AdminPage(),
+      },
     );
   }
 }

@@ -5,6 +5,7 @@ import '../widgets/heyzine_flipbook_widget.dart';
 import '../services/firestore_service.dart';
 import '../models/flipbook_model.dart';
 import '../widgets/ai_teaching_assistant.dart';
+import '../models/teaching_script_model.dart';
 
 class FlipBookReaderPage extends StatefulWidget {
   final String bookId;
@@ -34,6 +35,14 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
 
   // Thêm variables cho AI Assistant
   bool _showAIAssistant = true;
+
+  // Teaching scripts data
+  EBook? _ebookData;
+  List<BookPage> _teachingPages = [];
+  int _currentPageNumber = 1;
+  bool _isPlayingScript = false;
+  bool _autoReadingEnabled = true;
+  bool _isPaused = false;
 
   @override
   void initState() {
@@ -75,11 +84,48 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
         isLoading = false;
         // Xóa useHeyzine, luôn dùng custom view
       });
+
+      // Try to load teaching scripts if available
+      await _loadTeachingScripts();
     } catch (e) {
       print('Error loading book: $e');
       setState(() {
         isLoading = false;
       });
+    }
+  }
+
+  Future<void> _loadTeachingScripts() async {
+    try {
+      print('📚 Loading teaching scripts for book: ${book?.title}');
+      print('🔍 Book ID: ${book?.id}');
+
+      if (book?.id == null) {
+        print('❌ Book ID is null, cannot load teaching scripts');
+        return;
+      }
+
+      // Load EBook data with teaching scripts from Firestore
+      final ebookDoc = await _firestoreService.getEBookWithScripts(book!.id);
+
+      if (ebookDoc != null && ebookDoc.pages.isNotEmpty) {
+        setState(() {
+          _ebookData = ebookDoc;
+          _teachingPages = ebookDoc.pages;
+        });
+
+        print('✅ Loaded ${_teachingPages.length} pages with teaching scripts');
+
+        // Auto-start reading when flipbook loads
+        if (_teachingPages.isNotEmpty && _autoReadingEnabled) {
+          _startAutoReading();
+        }
+      } else {
+        print('⚠️ No teaching scripts found for this book. This might be a sample book without AI-generated content.');
+      }
+
+    } catch (e) {
+      print('Error loading teaching scripts: $e');
     }
   }
 
@@ -140,8 +186,16 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
                 onToggle: _toggleAIAssistant,
                 currentPageContent: _getCurrentPageContent(),
                 onReadPage: (content) {
-                  // Handle read page action
+                  _playCurrentPageScript();
                 },
+                // Pass voice control functions
+                isAutoReading: _autoReadingEnabled,
+                isPlaying: _isPlayingScript,
+                isPaused: _isPaused,
+                onToggleAutoReading: _toggleAutoReading,
+                onPlayPause: _togglePlayPause,
+                onNextPage: _goToNextPage,
+                onPreviousPage: _goToPreviousPage,
               ),
             ),
           ),
@@ -181,8 +235,16 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
                 onToggle: _toggleAIAssistant,
                 currentPageContent: _getCurrentPageContent(),
                 onReadPage: (content) {
-                  // Handle read page action
+                  _playCurrentPageScript();
                 },
+                // Pass voice control functions
+                isAutoReading: _autoReadingEnabled,
+                isPlaying: _isPlayingScript,
+                isPaused: _isPaused,
+                onToggleAutoReading: _toggleAutoReading,
+                onPlayPause: _togglePlayPause,
+                onNextPage: _goToNextPage,
+                onPreviousPage: _goToPreviousPage,
               ),
             ),
           ),
@@ -606,21 +668,180 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
     HapticFeedback.lightImpact();
   }
 
+  void _onPageChanged(int pageNumber) {
+    setState(() {
+      _currentPageNumber = pageNumber;
+    });
+
+    // Auto-play teaching script for the new page
+    _playTeachingScriptForPage(pageNumber);
+  }
+
+  Future<void> _playTeachingScriptForPage(int pageNumber) async {
+    try {
+      if (!_autoReadingEnabled || _isPaused) return;
+
+      // Find teaching script for this page
+      final pageData = _teachingPages.firstWhere(
+        (page) => page.pageNumber == pageNumber,
+        orElse: () => BookPage(pageNumber: pageNumber, content: ''),
+      );
+
+      if (pageData.teachingScript != null && !_isPlayingScript) {
+        setState(() {
+          _isPlayingScript = true;
+          _isPaused = false;
+        });
+
+        print('🎤 Playing teaching script for page $pageNumber');
+
+        // Send script to AI Assistant for TTS
+        final script = pageData.teachingScript!.script;
+        print('📖 Script: $script');
+
+        // Use AI Assistant to play the script
+        await _playScriptWithAI(script);
+
+        // Auto advance to next page after script finishes
+        if (_autoReadingEnabled && !_isPaused && pageNumber < _teachingPages.length) {
+          await Future.delayed(const Duration(seconds: 2)); // Brief pause between pages
+          _goToNextPage();
+        } else {
+          setState(() {
+            _isPlayingScript = false;
+          });
+        }
+      }
+    } catch (e) {
+      print('Error playing teaching script: $e');
+      setState(() {
+        _isPlayingScript = false;
+      });
+    }
+  }
+
+  Future<void> _playScriptWithAI(String script) async {
+    try {
+      // This integrates with the AI Assistant's TTS functionality
+      // You can call the AI service directly or trigger through the assistant widget
+
+      // For now, simulate the duration based on script length
+      // In real implementation, this would call AIService.readPage() or similar
+      final estimatedDuration = (script.length / 10).ceil(); // ~10 chars per second
+      await Future.delayed(Duration(seconds: estimatedDuration));
+
+    } catch (e) {
+      print('Error playing script with AI: $e');
+    }
+  }
+
   void _toggleAIAssistant() {
     setState(() {
       _showAIAssistant = !_showAIAssistant;
     });
   }
 
+  // Auto-reading functions
+  void _startAutoReading() {
+    if (_teachingPages.isNotEmpty && _autoReadingEnabled) {
+      print('🎤 Starting auto-reading from page 1');
+      _playTeachingScriptForPage(1);
+    }
+  }
+
+  void _toggleAutoReading() {
+    setState(() {
+      _autoReadingEnabled = !_autoReadingEnabled;
+    });
+
+    if (_autoReadingEnabled && !_isPlayingScript) {
+      _playCurrentPageScript();
+    } else if (!_autoReadingEnabled && _isPlayingScript) {
+      _stopCurrentScript();
+    }
+  }
+
+  void _togglePlayPause() {
+    setState(() {
+      _isPaused = !_isPaused;
+    });
+
+    if (_isPaused) {
+      _pauseCurrentScript();
+    } else {
+      _resumeCurrentScript();
+    }
+  }
+
+  void _playCurrentPageScript() {
+    if (_autoReadingEnabled && !_isPlayingScript) {
+      _playTeachingScriptForPage(_currentPageNumber);
+    }
+  }
+
+  void _stopCurrentScript() {
+    setState(() {
+      _isPlayingScript = false;
+      _isPaused = false;
+    });
+    // TODO: Stop TTS/audio playback
+  }
+
+  void _pauseCurrentScript() {
+    // TODO: Pause TTS/audio playback
+  }
+
+  void _resumeCurrentScript() {
+    // TODO: Resume TTS/audio playback
+  }
+
+  void _goToNextPage() {
+    if (_currentPageNumber < _teachingPages.length) {
+      setState(() {
+        _currentPageNumber++;
+      });
+      _onPageChanged(_currentPageNumber);
+    }
+  }
+
+  void _goToPreviousPage() {
+    if (_currentPageNumber > 1) {
+      setState(() {
+        _currentPageNumber--;
+      });
+      _onPageChanged(_currentPageNumber);
+    }
+  }
+
   String _getCurrentPageContent() {
     if (book == null || currentPage >= book!.pages.length) {
       return "";
     }
-    
+
     // Giả sử bạn có content text trong page model
     // Thay đổi theo cấu trúc dữ liệu thực tế của bạn
     final page = book!.pages[currentPage];
+
+    // Also check teaching pages
+    final teachingPage = _teachingPages.firstWhere(
+      (page) => page.pageNumber == _currentPageNumber,
+      orElse: () => BookPage(pageNumber: _currentPageNumber, content: ''),
+    );
+
+    if (teachingPage.content.isNotEmpty) {
+      return teachingPage.content;
+    }
+
     return page.content ?? "Nội dung trang ${currentPage + 1}";
+  }
+
+  String _getCurrentTeachingScript() {
+    final teachingPage = _teachingPages.firstWhere(
+      (page) => page.pageNumber == _currentPageNumber,
+      orElse: () => BookPage(pageNumber: _currentPageNumber, content: ''),
+    );
+
+    return teachingPage.teachingScript?.script ?? '';
   }
 
   @override

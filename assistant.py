@@ -12,7 +12,7 @@ import threading
 import queue
 
 # === Gemini config ===
-genai.configure(api_key="AIzaSyAkECyB7OhyuhcrsjdHR9K7yd_XnqeXR9k")
+genai.configure(api_key="AIzaSyBGWplwpUQUIUZ9QAg3dPMj5poFeNr1qu8")
 gemini_model = genai.GenerativeModel("gemini-2.0-flash")
 
 app = Flask(__name__)
@@ -206,8 +206,16 @@ def stop_voice_listening():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == "__main__":
+    print("=" * 50)
     print("🤖 AI Teaching Assistant Server Starting...")
     print("📚 Gemini AI: Ready")
     print("🔊 Edge TTS: Ready")
     print("🌐 Server: http://localhost:5000")
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    print("🔗 Health Check: http://localhost:5000/health")
+    print("=" * 50)
+
+    try:
+        app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+    except Exception as e:
+        print(f"❌ Failed to start server: {e}")
+        print("💡 Make sure port 5000 is not in use")

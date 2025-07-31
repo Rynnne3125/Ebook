@@ -5,10 +5,10 @@ import 'package:flutter/foundation.dart';
 import 'dart:typed_data';
 
 class CloudinaryService {
-  static const String cloudName = 'your-cloud-name';
-  static const String apiKey = 'your-api-key';
-  static const String apiSecret = 'your-api-secret';
-  static const String uploadPreset = 'your-upload-preset';
+  static const String cloudName = 'ddjrbkhpx';
+  static const String apiKey = '534297453884984';
+  static const String apiSecret = '23OLY_AqI11rISnQ5EHl66OHahU';
+  static const String uploadPreset = 'ml_default';
 
   // Upload image file (mobile)
   static Future<String?> uploadImage(File imageFile) async {
