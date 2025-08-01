@@ -424,6 +424,10 @@ class FirestoreService {
             teachingScript: teachingScript,
           ));
         }
+
+        // Sort pages by pageNumber to ensure correct order
+        pages.sort((a, b) => a.pageNumber.compareTo(b.pageNumber));
+        print('📚 Sorted ${pages.length} pages by pageNumber');
       }
 
       return EBook(

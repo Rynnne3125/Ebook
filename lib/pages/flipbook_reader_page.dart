@@ -4,6 +4,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:just_audio/just_audio.dart';
 import '../utils/responsive_utils.dart';
 import '../widgets/heyzine_flipbook_widget.dart';
+import '../widgets/heyzine_flipbook_web.dart';
 import '../services/firestore_service.dart';
 import '../services/ai_service.dart';
 import '../models/flipbook_model.dart';
@@ -48,6 +49,7 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
   bool _isPlayingScript = false;
   bool _autoReadingEnabled = true;
   bool _isPaused = false;
+  bool _isProcessingPageChange = false;
 
   @override
   void initState() {
@@ -150,6 +152,12 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
         });
 
         print('✅ Loaded ${_teachingPages.length} pages with teaching scripts');
+
+        // Debug: Print page order to verify sorting
+        for (int i = 0; i < _teachingPages.length && i < 10; i++) {
+          final page = _teachingPages[i];
+          print('📄 Page ${i + 1}: pageNumber=${page.pageNumber}, hasScript=${page.teachingScript != null}');
+        }
 
         // Auto-start reading when flipbook loads
         if (_teachingPages.isNotEmpty && _autoReadingEnabled) {
@@ -379,9 +387,8 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
         child: HeyzineFlipbookWidget(
           heyzineUrl: book!.heyzineUrl!,
           onPageChanged: (page) {
-            setState(() {
-              currentPage = page;
-            });
+            print('📖 Heyzine page changed to: $page');
+            _handleHeyzinePageChange(page);
           },
         ),
       ),
@@ -704,17 +711,26 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
   }
 
   void _onPageChanged(int pageNumber) {
+    print('📖 Page changed to: $pageNumber');
+
+    // Stop current voice immediately
+    _stopCurrentScript();
+
     setState(() {
       _currentPageNumber = pageNumber;
     });
 
-    // Auto-play teaching script for the new page
-    _playTeachingScriptForPage(pageNumber);
+    // Auto-play teaching script for the new page after a short delay
+    if (_autoReadingEnabled && !_isPaused) {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _playTeachingScriptForPage(pageNumber);
+      });
+    }
   }
 
   Future<void> _playTeachingScriptForPage(int pageNumber) async {
     try {
-      if (!_autoReadingEnabled || _isPaused) return;
+      if (!_autoReadingEnabled || _isPaused || _isProcessingPageChange) return;
 
       // Find teaching script for this page
       final pageData = _teachingPages.firstWhere(
@@ -726,31 +742,28 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
         setState(() {
           _isPlayingScript = true;
           _isPaused = false;
+          _isProcessingPageChange = true;
         });
 
         print('🎤 Playing teaching script for page $pageNumber');
 
         // Send script to AI Assistant for TTS
         final script = pageData.teachingScript!.script;
-        print('📖 Script: $script');
+        print('📖 Playing script for page $pageNumber: ${script.substring(0, 50)}...');
 
         // Use AI Assistant to play the script
         await _playScriptWithAI(script);
 
-        // Auto advance to next page after script finishes
-        if (_autoReadingEnabled && !_isPaused && pageNumber < _teachingPages.length) {
-          await Future.delayed(const Duration(seconds: 2)); // Brief pause between pages
-          _goToNextPage();
-        } else {
-          setState(() {
-            _isPlayingScript = false;
-          });
-        }
+        // Note: Auto advance is handled in audio completion listener
+        setState(() {
+          _isProcessingPageChange = false;
+        });
       }
     } catch (e) {
       print('Error playing teaching script: $e');
       setState(() {
         _isPlayingScript = false;
+        _isProcessingPageChange = false;
       });
     }
   }
@@ -805,23 +818,24 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
 
       // Listen for completion to auto advance page
       _audioPlayer.playerStateStream.listen((state) {
-        if (state.processingState == ProcessingState.completed) {
-          print('🎵 Audio playback completed');
+        if (state.processingState == ProcessingState.completed && _isPlayingScript) {
+          print('🎵 Audio playback completed for page $_currentPageNumber');
           setState(() {
             _isPlayingScript = false;
           });
 
-          // Auto advance to next page if enabled
-          if (_autoReadingEnabled && !_isPaused) {
+          // Auto advance to next page if enabled and not manually paused
+          if (_autoReadingEnabled && !_isPaused && !_isProcessingPageChange) {
+            print('⏭️ Auto-advancing to next page after audio completion');
             Future.delayed(const Duration(seconds: 1), () {
-              _goToNextPage();
+              _autoAdvanceToNextPage();
             });
           }
         }
       });
 
       // Play audio
-      print('▶️ Starting audio playback...');
+      print('▶️ Starting audio playback for page $_currentPageNumber...');
       await _audioPlayer.play();
 
     } catch (e) {
@@ -900,19 +914,121 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
 
   void _goToNextPage() {
     if (_currentPageNumber < _teachingPages.length) {
-      setState(() {
-        _currentPageNumber++;
-      });
-      _onPageChanged(_currentPageNumber);
+      final newPage = _currentPageNumber + 1;
+      print('🔄 Manual next page: $_currentPageNumber → $newPage');
+
+      // Update both internal state and Heyzine flipbook
+      _updatePageAndVoice(newPage);
+    } else {
+      print('📖 Already at last page');
     }
   }
 
   void _goToPreviousPage() {
     if (_currentPageNumber > 1) {
-      setState(() {
-        _currentPageNumber--;
+      final newPage = _currentPageNumber - 1;
+      print('🔄 Manual previous page: $_currentPageNumber → $newPage');
+
+      // Update both internal state and Heyzine flipbook
+      _updatePageAndVoice(newPage);
+    } else {
+      print('📖 Already at first page');
+    }
+  }
+
+  void _updatePageAndVoice(int newPageNumber) {
+    // Stop current voice immediately
+    _stopCurrentScript();
+
+    // Update internal page state
+    setState(() {
+      _currentPageNumber = newPageNumber;
+    });
+
+    // Update Heyzine flipbook to match
+    _updateHeyzineFlipbookPage();
+
+    // Play voice for new page if auto-reading is enabled
+    if (_autoReadingEnabled && !_isPaused) {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _playTeachingScriptForPage(newPageNumber);
       });
-      _onPageChanged(_currentPageNumber);
+    }
+  }
+
+  void _updateHeyzineFlipbookPage() {
+    // Use Heyzine controller to change page
+    print('🔄 Updating Heyzine flipbook to page $_currentPageNumber');
+    print('🔍 HeyzineFlipbookController instance: ${HeyzineFlipbookController.instance}');
+
+    try {
+      HeyzineFlipbookController.instance.goToPage(_currentPageNumber);
+      print('✅ Heyzine goToPage called successfully');
+    } catch (e) {
+      print('❌ Error updating Heyzine page: $e');
+    }
+  }
+
+  void _autoAdvanceToNextPage() {
+    if (_isProcessingPageChange) {
+      print('⚠️ Page change already in progress, skipping auto-advance');
+      return;
+    }
+
+    if (_currentPageNumber < _teachingPages.length) {
+      final newPage = _currentPageNumber + 1;
+      print('� Auto-advancing: $_currentPageNumber → $newPage');
+
+      setState(() {
+        _currentPageNumber = newPage;
+        _isProcessingPageChange = true;
+      });
+
+      // Update Heyzine flipbook to match
+      _updateHeyzineFlipbookPage();
+
+      // Play voice for new page
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _playTeachingScriptForPage(newPage);
+      });
+    } else {
+      print('📖 Reached end of book - stopping auto-reading');
+      setState(() {
+        _autoReadingEnabled = false;
+        _isPlayingScript = false;
+        _isProcessingPageChange = false;
+      });
+    }
+  }
+
+  void _handleHeyzinePageChange(int newPage) {
+    if (_isProcessingPageChange) {
+      print('⚠️ Ignoring Heyzine page change during processing');
+      return;
+    }
+
+    print('🔄 Handling Heyzine page change: $_currentPageNumber → $newPage');
+
+    // Stop current audio if playing
+    if (_isPlayingScript) {
+      _stopCurrentScript();
+    }
+
+    setState(() {
+      _currentPageNumber = newPage;
+      currentPage = newPage - 1; // Heyzine uses 1-based, UI uses 0-based
+      _isProcessingPageChange = true;
+    });
+
+    // Play voice for new page if auto-reading is enabled
+    if (_autoReadingEnabled && !_isPaused) {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _playTeachingScriptForPage(newPage);
+      });
+    } else {
+      setState(() {
+        _isProcessingPageChange = false;
+      });
     }
   }
 
@@ -949,8 +1065,20 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
 
   @override
   void dispose() {
+    print('🔄 Disposing FlipBook Reader - stopping all audio');
+
+    // Stop all audio and voice
+    _stopCurrentScript();
+    _audioPlayer.dispose();
     _pageController.dispose();
-    _flutterTts.stop(); // Stop TTS when disposing
+
+    // Reset auto-reading state
+    setState(() {
+      _autoReadingEnabled = false;
+      _isPlayingScript = false;
+      _isPaused = false;
+    });
+
     super.dispose();
   }
 
