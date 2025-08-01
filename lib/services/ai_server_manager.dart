@@ -27,19 +27,21 @@ class AIServerManager {
       }
 
       // Chỉ khởi động server trên desktop platforms
-      if (!kIsWeb && (Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
+      if (!kIsWeb) {
+        try {
+          if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
         print('🚀 Starting AI Server...');
 
-        // Tìm file assistant.py
-        final scriptPath = await _findAssistantScript();
+        // Tìm file backend/app.py
+        final scriptPath = await _findBackendScript();
         if (scriptPath == null) {
-          print('❌ assistant.py not found in current directory');
+          print('❌ backend/app.py not found in current directory');
           print('📁 Current directory: ${Directory.current.path}');
-          print('💡 Please ensure assistant.py is in the project root');
+          print('💡 Please ensure backend/app.py exists');
           return false;
         }
 
-        print('📄 Found assistant.py at: $scriptPath');
+        print('📄 Found backend/app.py at: $scriptPath');
 
         // Thử các lệnh Python khác nhau
         final pythonCommands = ['python', 'python3', 'py'];
@@ -91,18 +93,29 @@ class AIServerManager {
           }
         }
 
-        print('❌ Failed to start AI Server with any Python command');
-        return false;
+            print('❌ Failed to start AI Server with any Python command');
+            return false;
+          }
+        } catch (e) {
+          print('⚠️ Platform detection failed: $e');
+          // Trên web/mobile, chỉ kiểm tra server có sẵn
+          print('⚠️ AI Server not available. Please start backend manually');
+          print('💡 Run: python backend/app.py');
+          return false;
+        }
       } else {
-        // Trên web/mobile, chỉ kiểm tra server có sẵn
-        print('⚠️ AI Server not available. Please start assistant.py manually');
-        print('💡 Run: python assistant.py');
+        // Trên web, chỉ kiểm tra server có sẵn
+        print('🌐 Web platform detected - AI Server should be started manually');
+        print('💡 Run: python backend/app.py');
         return false;
       }
     } catch (e) {
       print('❌ Failed to start AI Server: $e');
       return false;
     }
+
+    // Default return for any unhandled case
+    return false;
   }
 
   static Future<void> _killCurrentProcess() async {
@@ -112,13 +125,13 @@ class AIServerManager {
     }
   }
 
-  static Future<String?> _findAssistantScript() async {
+  static Future<String?> _findBackendScript() async {
     final possiblePaths = [
-      'assistant.py',
-      '../assistant.py',
-      '../../assistant.py',
-      'scripts/assistant.py',
-      'python/assistant.py',
+      'backend/app.py',
+      '../backend/app.py',
+      '../../backend/app.py',
+      'app.py',
+      '../app.py',
     ];
 
     for (final path in possiblePaths) {

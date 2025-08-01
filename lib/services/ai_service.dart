@@ -1,9 +1,40 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class AIService {
-  static const String baseUrl = 'http://localhost:5000';
+  // Dynamic base URL based on environment
+  static String get baseUrl {
+    // 1. Check for explicit Render backend URL
+    const String? renderUrl = String.fromEnvironment('RENDER_BACKEND_URL');
+    if (renderUrl != null && renderUrl.isNotEmpty) {
+      print('🌐 Using Render backend: $renderUrl');
+      return renderUrl;
+    }
+
+    // 2. Check for general backend URL
+    const String? backendUrl = String.fromEnvironment('BACKEND_URL');
+    if (backendUrl != null && backendUrl.isNotEmpty) {
+      print('🔗 Using custom backend: $backendUrl');
+      return backendUrl;
+    }
+
+    // 3. Auto-detect production web deployment
+    if (kIsWeb) {
+      final currentHost = Uri.base.host;
+      if (currentHost != 'localhost' && currentHost != '127.0.0.1') {
+        // Try Render.com pattern first
+        final renderUrl = 'https://ebook-baend.onrender.com';
+        print('🌐 Production web detected, trying Render: $renderUrl');
+        return renderUrl;
+      }
+    }
+
+    // 4. Default to localhost for development
+    print('💻 Using local development backend: http://localhost:5001');
+    return 'http://localhost:5001';
+  }
   
   static Future<Map<String, dynamic>> sendMessage({
     required String message,

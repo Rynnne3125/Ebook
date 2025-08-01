@@ -1,0 +1,21 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow read/write access to all documents for development
+    // TODO: Tighten security rules for production
+    match /{document=**} {
+      allow read, write: if true;
+    }
+    
+    // More specific rules for books collection
+    match /books/{bookId} {
+      allow read: if true;
+      allow write: if true;
+      
+      // Allow access to pages subcollection
+      match /pages/{pageId} {
+        allow read, write: if true;
+      }
+    }
+  }
+}

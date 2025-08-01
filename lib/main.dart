@@ -1,7 +1,10 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:http/http.dart' as http;
+import 'package:sachdientudemo/services/ai_service.dart';
 import 'firebase_options.dart';
 import 'pages/home_page.dart';
 import 'pages/contact_page.dart';
@@ -31,30 +34,115 @@ void main() async {
     print('Firebase initialization error: $e');
   }
 
-  // Khởi động AI Server tự động
+  // Khởi động Backend Server (chỉ trên desktop platforms)
   try {
-    print('🤖 Initializing AI Server...');
-    print('📁 Working directory: ${Directory.current.path}');
+    if (!kIsWeb) {
+      print('🤖 Auto-starting Backend Server from main.dart...');
+      print('📁 Working directory: ${Directory.current.path}');
 
-    // Try new ServerManager first
-    final newServerStarted = await ServerManager.startServers();
-    if (newServerStarted) {
-      print('✅ Python servers started successfully');
-    } else {
-      print('⚠️ New server manager failed, trying legacy...');
-      final serverStarted = await AIServerManager.startServer();
-      if (serverStarted) {
-        print('✅ AI Server ready');
+      // Force start backend từ main.dart
+      final backendStarted = await _startBackendFromMain();
+      if (backendStarted) {
+        print('✅ Backend started successfully from main.dart');
       } else {
-        print('⚠️ AI Server not available - manual start required');
-        print('💡 To start manually, run: python assistant.py && python app.py');
+        print('⚠️ Backend auto-start failed, trying ServerManager...');
+        final serverStarted = await ServerManager.startServers();
+        if (serverStarted) {
+          print('✅ Backend started via ServerManager');
+        } else {
+          print('⚠️ Backend not available - check deployment config');
+          print('💡 For local dev: python backend/app.py');
+        }
       }
+    } else {
+      print('🌐 Web platform - Backend should be hosted separately');
+      print('💡 Using backend URL: ${AIService.baseUrl}');
     }
   } catch (e) {
-    print('❌ AI Server initialization error: $e');
+    print('❌ Backend initialization error: $e');
   }
   
   runApp(const EBookMobileApp());
+}
+
+/// Khởi động backend server trực tiếp từ main.dart
+Future<bool> _startBackendFromMain() async {
+  try {
+    // Chỉ start trên desktop platforms
+    if (kIsWeb) {
+      print('🌐 Web platform - Backend should be hosted separately');
+      return false;
+    }
+
+    if (!Platform.isWindows && !Platform.isMacOS && !Platform.isLinux) {
+      print('📱 Mobile platform - Backend should be hosted separately');
+      return false;
+    }
+
+    print('💻 Desktop platform detected - Starting local backend...');
+
+    // Tìm backend/app.py
+    final backendPath = 'backend/app.py';
+    final backendFile = File(backendPath);
+
+    if (!await backendFile.exists()) {
+      print('❌ Backend file not found: $backendPath');
+      return false;
+    }
+
+    print('📄 Found backend at: ${backendFile.absolute.path}');
+
+    // Thử các Python commands
+    final pythonCommands = ['python', 'python3', 'py'];
+
+    for (final pythonCmd in pythonCommands) {
+      try {
+        print('🐍 Trying to start backend with: $pythonCmd');
+
+        final process = await Process.start(
+          pythonCmd,
+          [backendPath],
+          workingDirectory: Directory.current.path,
+        );
+
+        // Listen to output
+        process.stdout.transform(SystemEncoding().decoder).listen((data) {
+          print('Backend: $data');
+        });
+
+        process.stderr.transform(SystemEncoding().decoder).listen((data) {
+          print('Backend Error: $data');
+        });
+
+        // Wait for backend to start
+        await Future.delayed(const Duration(seconds: 8));
+
+        // Test health check
+        try {
+          final response = await http.get(Uri.parse('http://localhost:5001/health'));
+          if (response.statusCode == 200) {
+            print('✅ Backend health check passed with $pythonCmd');
+            return true;
+          }
+        } catch (e) {
+          print('❌ Backend health check failed: $e');
+        }
+
+        // Kill process if health check failed
+        process.kill();
+
+      } catch (e) {
+        print('❌ Failed to start with $pythonCmd: $e');
+      }
+    }
+
+    print('❌ Failed to start backend with any Python command');
+    return false;
+
+  } catch (e) {
+    print('❌ Error in _startBackendFromMain: $e');
+    return false;
+  }
 }
 
 class EBookMobileApp extends StatelessWidget {

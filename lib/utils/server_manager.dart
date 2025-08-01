@@ -51,62 +51,42 @@ class ServerManager {
         ]);
       }
 
-      // Start assistant.py
-      print('🤖 Starting assistant.py server...');
-      _assistantProcess = await Process.start(
-        'python', 
-        ['assistant.py'],
-        workingDirectory: Directory.current.path,
-      );
-
-      // Listen to assistant.py output
-      _assistantProcess!.stdout.listen((data) {
-        print('Assistant: ${String.fromCharCodes(data)}');
-      });
-
-      _assistantProcess!.stderr.listen((data) {
-        print('Assistant Error: ${String.fromCharCodes(data)}');
-      });
-
-      // Wait for assistant.py to start
-      await Future.delayed(const Duration(seconds: 3));
-
-      // Start app.py
-      print('📱 Starting app.py server...');
+      // Start integrated backend (backend/app.py)
+      print('🤖 Starting integrated backend server...');
       _appProcess = await Process.start(
-        'python', 
-        ['app.py'],
+        'python',
+        ['backend/app.py'],
         workingDirectory: Directory.current.path,
       );
 
-      // Listen to app.py output
+      // Listen to backend output
       _appProcess!.stdout.listen((data) {
-        print('App: ${String.fromCharCodes(data)}');
+        print('Backend: ${String.fromCharCodes(data)}');
       });
 
       _appProcess!.stderr.listen((data) {
-        print('App Error: ${String.fromCharCodes(data)}');
+        print('Backend Error: ${String.fromCharCodes(data)}');
       });
 
-      // Wait for servers to fully start
-      await Future.delayed(const Duration(seconds: 5));
+      // Wait for backend to fully start
+      await Future.delayed(const Duration(seconds: 8));
 
       _serversStarted = true;
-      print('✅ Python servers started successfully!');
+      print('✅ Integrated backend started successfully!');
       return true;
 
     } catch (e) {
-      print('❌ Error starting servers: $e');
+      print('❌ Error starting backend: $e');
       return false;
     }
   }
 
   static Future<void> stopServers() async {
-    print('🛑 Stopping Python servers...');
-    
-    if (_assistantProcess != null) {
-      _assistantProcess!.kill();
-      _assistantProcess = null;
+    print('🛑 Stopping backend server...');
+
+    if (_appProcess != null) {
+      _appProcess!.kill();
+      _appProcess = null;
     }
     
     if (_appProcess != null) {

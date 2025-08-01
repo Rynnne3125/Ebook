@@ -150,15 +150,28 @@ class HeyzineFlipbookController {
                 // Try different methods to get current page
                 let currentPage = null;
 
-                // Method 1: Heyzine flipbook API
-                if (window.flipbook && window.flipbook.getCurrentPage) {
-                  currentPage = window.flipbook.getCurrentPage();
-                } else if (window.viewer && window.viewer.currentPage) {
-                  currentPage = window.viewer.currentPage;
-                } else if (window.book && window.book.currentPage) {
-                  currentPage = window.book.currentPage;
-                } else if (window.FLIPBOOK && window.FLIPBOOK.currentPage) {
-                  currentPage = window.FLIPBOOK.currentPage;
+                // Method 1: Enhanced Heyzine flipbook API detection
+                const heyzineAPIs = [
+                  () => window.flipbook?.getCurrentPage?.(),
+                  () => window.viewer?.currentPage,
+                  () => window.book?.currentPage,
+                  () => window.FLIPBOOK?.currentPage,
+                  () => window.HeyzineFlipbook?.currentPage,
+                  () => window.flipBook?.currentPage,
+                  () => window.magazine?.currentPage,
+                  () => window.publication?.currentPage
+                ];
+
+                for (let api of heyzineAPIs) {
+                  try {
+                    const page = api();
+                    if (page && page > 0) {
+                      currentPage = page;
+                      break;
+                    }
+                  } catch (e) {
+                    // Continue to next API
+                  }
                 }
 
                 // Method 2: Check URL hash for page number
@@ -280,8 +293,44 @@ class HeyzineFlipbookController {
                 });
               }
 
-              // Periodic check (more frequent)
-              setInterval(detectPageChange, 500);
+              // Hook into Heyzine events if available
+              function hookHeyzineEvents() {
+                const heyzineObjects = [window.flipbook, window.viewer, window.book, window.FLIPBOOK, window.HeyzineFlipbook];
+
+                heyzineObjects.forEach(obj => {
+                  if (obj && typeof obj === 'object') {
+                    // Try to hook page change events
+                    if (obj.on && typeof obj.on === 'function') {
+                      try {
+                        obj.on('pageChanged', detectPageChange);
+                        obj.on('pageChange', detectPageChange);
+                        obj.on('turnPage', detectPageChange);
+                        obj.on('flip', detectPageChange);
+                        console.log('✅ Hooked Heyzine events');
+                      } catch (e) {
+                        console.log('⚠️ Could not hook events:', e);
+                      }
+                    }
+                  }
+                });
+              }
+
+              // Try to hook events immediately and after delay
+              hookHeyzineEvents();
+              setTimeout(hookHeyzineEvents, 2000);
+              setTimeout(hookHeyzineEvents, 5000);
+
+              // Real-time monitoring with multiple intervals
+              setInterval(detectPageChange, 200);  // Very frequent check
+              setInterval(detectPageChange, 1000); // Backup check
+
+              // Immediate check on any user interaction
+              ['click', 'touchstart', 'keydown', 'wheel', 'swipe'].forEach(event => {
+                document.addEventListener(event, () => {
+                  setTimeout(detectPageChange, 50);
+                  setTimeout(detectPageChange, 200);
+                }, true);
+              });
             '''
           }, '*');
           print('📜 Page detection and navigation hiding script injected');
