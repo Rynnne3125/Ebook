@@ -21,20 +21,32 @@ load_dotenv()
 import uuid
 
 # === Assistant imports ===
-import speech_recognition as sr
-import pygame
-import edge_tts
-import asyncio
-import re
-import threading
-import queue
+try:
+    import speech_recognition as sr
+    import pygame
+    import edge_tts
+    import asyncio
+    import re
+    import threading
+    import queue
+    ASSISTANT_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Assistant dependencies not available: {e}")
+    ASSISTANT_AVAILABLE = False
 
 # Initialize Flask app
 app = Flask(__name__)
 CORS(app)
 
 # === Assistant initialization ===
-pygame.mixer.init()
+if ASSISTANT_AVAILABLE:
+    try:
+        pygame.mixer.init()
+        print("✅ Pygame mixer initialized")
+    except Exception as e:
+        print(f"⚠️ Pygame mixer init failed: {e}")
+        ASSISTANT_AVAILABLE = False
+
 history = []
 
 def clean_text(text):
@@ -617,8 +629,13 @@ def chat():
         # Get AI reply
         reply = get_gemini_reply(user_text, page_content)
 
-        # Generate audio
-        audio_base64 = asyncio.run(generate_audio_base64(clean_text(reply)))
+        # Generate audio if available
+        audio_base64 = None
+        if ASSISTANT_AVAILABLE:
+            try:
+                audio_base64 = asyncio.run(generate_audio_base64(clean_text(reply)))
+            except Exception as audio_error:
+                print(f"⚠️ Audio generation failed: {audio_error}")
 
         return jsonify({
             'reply': reply,
@@ -651,6 +668,9 @@ def generate_audio_route():
 def read_teaching_script():
     """Endpoint để đọc teaching script với voice assistant"""
     try:
+        if not ASSISTANT_AVAILABLE:
+            return jsonify({'error': 'Assistant not available'}), 503
+
         data = request.get_json()
         script = data.get('script', '')
         page_number = data.get('pageNumber', 1)
@@ -662,7 +682,17 @@ def read_teaching_script():
         print(f"📖 Script length: {len(script)} characters")
 
         # Tạo audio với Edge TTS
-        audio_base64 = asyncio.run(generate_audio_base64(clean_text(script), voice="vi-VN-HoaiMyNeural"))
+        try:
+            audio_base64 = asyncio.run(generate_audio_base64(clean_text(script), voice="vi-VN-HoaiMyNeural"))
+        except Exception as audio_error:
+            print(f"⚠️ Audio generation failed: {audio_error}")
+            return jsonify({
+                'success': True,
+                'audio': None,
+                'pageNumber': page_number,
+                'scriptLength': len(script),
+                'warning': 'Audio generation not available'
+            })
 
         return jsonify({
             'success': True,
