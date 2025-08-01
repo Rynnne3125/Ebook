@@ -97,25 +97,36 @@ class HeyzineFlipbookController {
 
   void _injectPageDetectionScript() {
     if (_iframe != null) {
-      Timer(const Duration(seconds: 3), () {
+      // Inject script multiple times to ensure it works
+      Timer(const Duration(seconds: 2), () => _tryInjectScript());
+      Timer(const Duration(seconds: 5), () => _tryInjectScript());
+      Timer(const Duration(seconds: 10), () => _tryInjectScript());
+    }
+  }
+
+  void _tryInjectScript() {
+    if (_iframe != null) {
+      Timer(const Duration(milliseconds: 100), () {
         try {
-          // Try to inject page detection and navigation hiding script
+          // Try to inject comprehensive page detection script
           _iframe!.contentWindow?.postMessage({
-            'type': 'inject-script',
-            'script': '''
-              // Hide navigation buttons with CSS
-              function hideNavigationButtons() {
-                const style = document.createElement('style');
-                style.textContent = `
-                  /* Hide common navigation button selectors */
-                  .navigation, .nav-buttons, .page-nav,
-                  .next-page, .prev-page, .page-controls,
-                  .flipbook-nav, .flipbook-controls,
-                  [class*="nav"], [class*="button"], [class*="control"],
-                  button[title*="next"], button[title*="prev"],
-                  button[title*="Next"], button[title*="Previous"],
-                  .arrow-left, .arrow-right, .page-arrow,
-                  .btn-next, .btn-prev, .btn-forward, .btn-back {
+          'type': 'inject-script',
+          'script': '''
+            console.log('🔧 Injecting Heyzine page detection script...');
+
+            // Hide navigation buttons with CSS
+            function hideNavigationButtons() {
+              const style = document.createElement('style');
+              style.textContent = `
+                /* Hide common navigation button selectors */
+                .navigation, .nav-buttons, .page-nav,
+                .next-page, .prev-page, .page-controls,
+                .flipbook-nav, .flipbook-controls,
+                [class*="nav"], [class*="button"], [class*="control"],
+                button[title*="next"], button[title*="prev"],
+                button[title*="Next"], button[title*="Previous"],
+                .arrow-left, .arrow-right, .page-arrow,
+                .btn-next, .btn-prev, .btn-forward, .btn-back {
                     display: none !important;
                     visibility: hidden !important;
                     opacity: 0 !important;
@@ -139,19 +150,70 @@ class HeyzineFlipbookController {
                 // Try different methods to get current page
                 let currentPage = null;
 
+                // Method 1: Heyzine flipbook API
                 if (window.flipbook && window.flipbook.getCurrentPage) {
                   currentPage = window.flipbook.getCurrentPage();
                 } else if (window.viewer && window.viewer.currentPage) {
                   currentPage = window.viewer.currentPage;
                 } else if (window.book && window.book.currentPage) {
                   currentPage = window.book.currentPage;
+                } else if (window.FLIPBOOK && window.FLIPBOOK.currentPage) {
+                  currentPage = window.FLIPBOOK.currentPage;
                 }
 
-                if (currentPage && currentPage !== lastPage) {
-                  lastPage = currentPage;
+                // Method 2: Check URL hash for page number
+                if (!currentPage && window.location.hash) {
+                  const hashMatch = window.location.hash.match(/[p#](\d+)/i);
+                  if (hashMatch) {
+                    currentPage = parseInt(hashMatch[1]);
+                  }
+                }
+
+                // Method 3: Look for page indicators in DOM
+                if (!currentPage) {
+                  const selectors = [
+                    '.page-number', '.current-page', '[class*="page"]',
+                    '.flipbook-page-number', '.page-counter', '.page-display',
+                    '[data-page]', '[aria-label*="page"]', '.page-info'
+                  ];
+
+                  for (let selector of selectors) {
+                    const elements = document.querySelectorAll(selector);
+                    for (let element of elements) {
+                      const pageNum = parseInt(element.textContent || element.value || element.getAttribute('data-page'));
+                      if (pageNum && pageNum > 0 && pageNum < 1000) {
+                        currentPage = pageNum;
+                        break;
+                      }
+                    }
+                    if (currentPage) break;
+                  }
+                }
+
+                // Method 4: Check for visible page elements
+                if (!currentPage) {
+                  const visiblePages = document.querySelectorAll('[class*="page"]:not([style*="display: none"])');
+                  for (let page of visiblePages) {
+                    const pageMatch = page.className.match(/page-?(\d+)/i);
+                    if (pageMatch) {
+                      currentPage = parseInt(pageMatch[1]);
+                      break;
+                    }
+                  }
+                }
+
+                // Always send current page status, even if unchanged
+                if (currentPage && currentPage > 0) {
+                  if (currentPage !== lastPage) {
+                    console.log('📖 Heyzine page changed:', lastPage, '→', currentPage);
+                    lastPage = currentPage;
+                  }
+
+                  // Send page status to parent
                   window.parent.postMessage({
                     type: 'heyzine-page-change',
-                    page: currentPage
+                    page: currentPage,
+                    timestamp: Date.now()
                   }, '*');
                 }
               }
@@ -170,16 +232,56 @@ class HeyzineFlipbookController {
               // Monitor clicks and keyboard events
               document.addEventListener('click', () => {
                 setTimeout(detectPageChange, 100);
+                setTimeout(detectPageChange, 500);
               });
 
               document.addEventListener('keydown', (e) => {
-                if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Space') {
+                if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Space' || e.key === 'PageUp' || e.key === 'PageDown') {
                   setTimeout(detectPageChange, 100);
+                  setTimeout(detectPageChange, 500);
                 }
               });
 
-              // Periodic check
-              setInterval(detectPageChange, 1000);
+              // Monitor for touch events (mobile)
+              document.addEventListener('touchend', () => {
+                setTimeout(detectPageChange, 100);
+                setTimeout(detectPageChange, 500);
+              });
+
+              // Monitor for scroll events
+              document.addEventListener('scroll', () => {
+                setTimeout(detectPageChange, 200);
+              });
+
+              // Monitor for hash changes
+              window.addEventListener('hashchange', () => {
+                setTimeout(detectPageChange, 100);
+              });
+
+              // Monitor for any DOM mutations that might indicate page change
+              if (window.MutationObserver) {
+                const observer = new MutationObserver((mutations) => {
+                  let shouldCheck = false;
+                  mutations.forEach((mutation) => {
+                    if (mutation.type === 'childList' || mutation.type === 'attributes') {
+                      shouldCheck = true;
+                    }
+                  });
+                  if (shouldCheck) {
+                    setTimeout(detectPageChange, 100);
+                  }
+                });
+
+                observer.observe(document.body, {
+                  childList: true,
+                  subtree: true,
+                  attributes: true,
+                  attributeFilter: ['class', 'style', 'data-page']
+                });
+              }
+
+              // Periodic check (more frequent)
+              setInterval(detectPageChange, 500);
             '''
           }, '*');
           print('📜 Page detection and navigation hiding script injected');

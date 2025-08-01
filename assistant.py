@@ -35,29 +35,153 @@ async def generate_audio_base64(text, voice="vi-VN-HoaiMyNeural"):
     audio_base64 = base64.b64encode(mp3_fp.read()).decode('utf-8')
     return audio_base64
 
+# === Conversation Memory Management ===
+conversation_memory = {
+    'session_started': False,
+    'topics_discussed': [],
+    'student_questions': [],
+    'current_lesson': None,
+    'greeting_count': 0,
+    'last_greeting_time': None,
+    'conversation_context': []
+}
+
+def get_conversation_context():
+    """Get relevant conversation context for AI"""
+    context_parts = []
+
+    if conversation_memory['current_lesson']:
+        context_parts.append(f"Bài học hiện tại: {conversation_memory['current_lesson']}")
+
+    if conversation_memory['topics_discussed']:
+        recent_topics = conversation_memory['topics_discussed'][-3:]  # Last 3 topics
+        context_parts.append(f"Các chủ đề đã thảo luận: {', '.join(recent_topics)}")
+
+    if conversation_memory['student_questions']:
+        recent_questions = conversation_memory['student_questions'][-2:]  # Last 2 questions
+        context_parts.append(f"Câu hỏi gần đây: {'; '.join(recent_questions)}")
+
+    return "\n".join(context_parts)
+
+def update_conversation_memory(user_text, page_content=""):
+    """Update conversation memory with new interaction"""
+    import time
+
+    # Mark session as started
+    if not conversation_memory['session_started']:
+        conversation_memory['session_started'] = True
+
+    # Extract lesson from page content
+    if page_content and "Bài" in page_content:
+        lesson_match = page_content.split('\n')[0] if '\n' in page_content else page_content[:50]
+        if lesson_match != conversation_memory['current_lesson']:
+            conversation_memory['current_lesson'] = lesson_match
+
+    # Store student question
+    conversation_memory['student_questions'].append(user_text)
+    if len(conversation_memory['student_questions']) > 5:
+        conversation_memory['student_questions'] = conversation_memory['student_questions'][-5:]
+
+    # Store conversation context
+    conversation_memory['conversation_context'].append(f"Học sinh: {user_text}")
+    if len(conversation_memory['conversation_context']) > 10:
+        conversation_memory['conversation_context'] = conversation_memory['conversation_context'][-10:]
+
+    # Extract topics from user question
+    chemistry_keywords = ['nguyên tử', 'phân tử', 'ion', 'hóa trị', 'phương trình', 'phản ứng', 'chất', 'hỗn hợp', 'nguyên tố']
+    for keyword in chemistry_keywords:
+        if keyword in user_text.lower() and keyword not in conversation_memory['topics_discussed']:
+            conversation_memory['topics_discussed'].append(keyword)
+            if len(conversation_memory['topics_discussed']) > 10:
+                conversation_memory['topics_discussed'] = conversation_memory['topics_discussed'][-10:]
+
+def should_greet():
+    """Determine if AI should greet based on conversation context"""
+    import time
+
+    # Never greet if already greeted more than once
+    if conversation_memory['greeting_count'] >= 1:
+        return False
+
+    # Only greet at the very beginning
+    if len(conversation_memory['student_questions']) <= 1:
+        return True
+
+    return False
+
+def mark_greeting_used():
+    """Mark that a greeting was used"""
+    import time
+    conversation_memory['greeting_count'] += 1
+    conversation_memory['last_greeting_time'] = time.time()
+
 # === Xử lý hội thoại Gemini ===
 def get_gemini_reply(user_text, page_content=""):
     try:
-        context = f"Nội dung trang hiện tại: {page_content}\n" if page_content else ""
+        # Update conversation memory
+        update_conversation_memory(user_text, page_content)
+
+        # Get conversation context
+        conversation_context = get_conversation_context()
+
+        # Build context
+        context_parts = []
+        if page_content:
+            context_parts.append(f"Nội dung trang hiện tại: {page_content}")
+        if conversation_context:
+            context_parts.append(f"Bối cảnh cuộc trò chuyện: {conversation_context}")
+
+        context = "\n".join(context_parts)
+
+        # Determine if greeting is needed
+        greeting_needed = should_greet()
+
+        # Build intelligent prompt based on conversation context
+        recent_context = "\n".join(conversation_memory['conversation_context'][-3:]) if conversation_memory['conversation_context'] else ""
+
         response = gemini_model.generate_content(
             f"""
-            Bạn là giáo viên Hóa học vui tính, dạy học sinh cấp 2. 
-            Trả lời dễ hiểu, có ví dụ thực tế, ngắn gọn, xúc tích (tối đa 100 từ).
-            **Chỉ trả lời với vai trò giáo viên, không được nhập vai học sinh.**
-            
+            Bạn là giáo viên Hóa học thông minh, tự nhiên, dạy học sinh cấp 2.
+
+            NGUYÊN TẮC QUAN TRỌNG:
+            - Trả lời ngắn gọn, súc tích (tối đa 70 từ)
+            - Đưa ra ví dụ thực tế cụ thể để học sinh dễ hiểu
+            - TUYỆT ĐỐI KHÔNG hỏi lại học sinh ("Các em có hiểu không?", "Còn câu hỏi nào không?")
+            - TUYỆT ĐỐI KHÔNG chào hỏi nếu đã chào rồi
+            - Trả lời tự nhiên, thông minh như giáo viên thật
+            - Tập trung vào giải thích kiến thức với ví dụ cụ thể
+            - Sử dụng ngôn ngữ đơn giản, gần gũi
+
+            BỐI CẢNH CUỘC TRÒ CHUYỆN GẦN ĐÂY:
+            {recent_context}
+
+            NỘI DUNG BÀI HỌC:
             {context}
+
             Câu hỏi của học sinh: "{user_text}"
-            
-            Nếu học sinh hỏi về nội dung trang, hãy giải thích dựa trên nội dung đó.
-            Nếu hỏi "đọc trang" hoặc "giải thích trang", hãy tóm tắt nội dung trang.
+
+            {"Chào em ngắn gọn (1 câu) rồi" if greeting_needed else ""}
+            Trả lời trực tiếp với ví dụ thực tế cụ thể. KHÔNG hỏi lại.
             """,
             generation_config=genai.types.GenerationConfig(
-                temperature=0.7,
-                top_p=0.95,
-                top_k=40
+                temperature=0.6,
+                top_p=0.9,
+                top_k=30
             )
         )
-        return response.text.strip()
+
+        reply = response.text.strip()
+
+        # Mark greeting as used if it was needed
+        if greeting_needed:
+            mark_greeting_used()
+
+        # Store AI response in conversation context
+        conversation_memory['conversation_context'].append(f"Thầy: {reply}")
+        if len(conversation_memory['conversation_context']) > 10:
+            conversation_memory['conversation_context'] = conversation_memory['conversation_context'][-10:]
+
+        return reply
     except Exception as e:
         print(f"Gemini error: {e}")
         return "Thầy đang bận chút, em chờ tí nhé!"

@@ -238,6 +238,8 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
                 onToggleAutoReading: _toggleAutoReading,
                 onPlayPause: _togglePlayPause,
                 onNextPage: _goToNextPage,
+                onPauseTeaching: _pauseTeachingForUserInteraction,
+                onResumeTeaching: _resumeTeachingAfterUserInteraction,
                 onPreviousPage: _goToPreviousPage,
               ),
             ),
@@ -287,6 +289,8 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
                 onToggleAutoReading: _toggleAutoReading,
                 onPlayPause: _togglePlayPause,
                 onNextPage: _goToNextPage,
+                onPauseTeaching: _pauseTeachingForUserInteraction,
+                onResumeTeaching: _resumeTeachingAfterUserInteraction,
                 onPreviousPage: _goToPreviousPage,
               ),
             ),
@@ -818,17 +822,21 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
 
       // Listen for completion to auto advance page
       _audioPlayer.playerStateStream.listen((state) {
-        if (state.processingState == ProcessingState.completed && _isPlayingScript) {
-          print('🎵 Audio playback completed for page $_currentPageNumber');
-          setState(() {
-            _isPlayingScript = false;
-          });
+        if (state.processingState == ProcessingState.completed && _isPlayingScript && mounted) {
+          print('Audio playback completed for page $_currentPageNumber');
+          if (mounted) {
+            setState(() {
+              _isPlayingScript = false;
+            });
+          }
 
           // Auto advance to next page if enabled and not manually paused
-          if (_autoReadingEnabled && !_isPaused && !_isProcessingPageChange) {
-            print('⏭️ Auto-advancing to next page after audio completion');
+          if (_autoReadingEnabled && !_isPaused && !_isProcessingPageChange && mounted) {
+            print('Auto-advancing to next page after audio completion');
             Future.delayed(const Duration(seconds: 1), () {
-              _autoAdvanceToNextPage();
+              if (mounted) {
+                _autoAdvanceToNextPage();
+              }
             });
           }
         }
@@ -970,65 +978,116 @@ class _FlipBookReaderPageState extends State<FlipBookReaderPage>
   }
 
   void _autoAdvanceToNextPage() {
-    if (_isProcessingPageChange) {
-      print('⚠️ Page change already in progress, skipping auto-advance');
+    if (_isProcessingPageChange || !mounted) {
+      print('Page change already in progress or widget disposed, skipping auto-advance');
       return;
     }
 
     if (_currentPageNumber < _teachingPages.length) {
-      final newPage = _currentPageNumber + 1;
-      print('� Auto-advancing: $_currentPageNumber → $newPage');
+      print('🔄 Auto-advancing to next page using _goToNextPage()');
 
-      setState(() {
-        _currentPageNumber = newPage;
-        _isProcessingPageChange = true;
-      });
-
-      // Update Heyzine flipbook to match
-      _updateHeyzineFlipbookPage();
-
-      // Play voice for new page
-      Future.delayed(const Duration(milliseconds: 500), () {
-        _playTeachingScriptForPage(newPage);
-      });
+      // Use the same function as the Next Page button to ensure consistency
+      _goToNextPage();
     } else {
-      print('📖 Reached end of book - stopping auto-reading');
-      setState(() {
-        _autoReadingEnabled = false;
-        _isPlayingScript = false;
-        _isProcessingPageChange = false;
-      });
+      print('📚 Reached end of book - stopping auto-reading');
+      if (mounted) {
+        setState(() {
+          _autoReadingEnabled = false;
+          _isPlayingScript = false;
+          _isProcessingPageChange = false;
+        });
+      }
     }
   }
 
   void _handleHeyzinePageChange(int newPage) {
-    if (_isProcessingPageChange) {
-      print('⚠️ Ignoring Heyzine page change during processing');
-      return;
+    print('🔄 Heyzine page changed: $_currentPageNumber → $newPage');
+
+    // Always update current page to stay in sync with Heyzine
+    if (mounted) {
+      setState(() {
+        _currentPageNumber = newPage;
+        currentPage = newPage - 1; // Heyzine uses 1-based, UI uses 0-based
+        _isProcessingPageChange = false; // Reset processing flag
+      });
     }
 
-    print('🔄 Handling Heyzine page change: $_currentPageNumber → $newPage');
-
     // Stop current audio if playing
+    if (_isPlayingScript) {
+      print('🛑 Stopping current script due to Heyzine page change');
+      _stopCurrentScript();
+    }
+
+    // Find corresponding teaching script for this page
+    final matchingPage = _teachingPages.firstWhere(
+      (page) => page.pageNumber == newPage,
+      orElse: () => BookPage(
+        pageNumber: newPage,
+        content: 'Trang $newPage - Chưa có kịch bản giảng dạy',
+        teachingScript: TeachingScript(
+          script: 'Đây là trang số $newPage. Nội dung sẽ được cập nhật sau.',
+          keyConcepts: [],
+          examples: [],
+          questions: [],
+          durationMinutes: 1,
+          createdAt: DateTime.now(),
+        ),
+      ),
+    );
+
+    final scriptContent = matchingPage.teachingScript?.script ?? 'Chưa có kịch bản';
+    print('📖 Found script for page $newPage: ${scriptContent.length > 50 ? scriptContent.substring(0, 50) + "..." : scriptContent}');
+
+    // Auto-play script for new page if auto-reading is enabled
+    if (_autoReadingEnabled && !_isPaused && mounted) {
+      Future.delayed(const Duration(milliseconds: 800), () {
+        if (mounted && !_isPlayingScript && _autoReadingEnabled && !_isPaused) {
+          print('🎤 Auto-playing script for Heyzine page $newPage');
+          _playTeachingScriptForPage(newPage);
+        }
+      });
+    }
+  }
+
+  void _pauseTeachingForUserInteraction() {
+    print('🔇 IMMEDIATELY stopping teaching voice for user interaction');
+
+    // IMMEDIATELY stop all audio playback
+    _audioPlayer.stop();
+
+    // Stop current teaching audio
     if (_isPlayingScript) {
       _stopCurrentScript();
     }
 
-    setState(() {
-      _currentPageNumber = newPage;
-      currentPage = newPage - 1; // Heyzine uses 1-based, UI uses 0-based
-      _isProcessingPageChange = true;
-    });
-
-    // Play voice for new page if auto-reading is enabled
-    if (_autoReadingEnabled && !_isPaused) {
-      Future.delayed(const Duration(milliseconds: 500), () {
-        _playTeachingScriptForPage(newPage);
-      });
-    } else {
+    // Set flags to prevent any new audio from starting
+    if (mounted) {
       setState(() {
+        _isPaused = true;
+        _isPlayingScript = false;
         _isProcessingPageChange = false;
       });
+    }
+
+    print('🔇 Teaching voice STOPPED - user can now speak');
+  }
+
+  void _resumeTeachingAfterUserInteraction() {
+    print('🔊 Resuming teaching voice after user interaction');
+
+    if (mounted && _autoReadingEnabled) {
+      setState(() {
+        _isPaused = false;
+      });
+
+      // Resume reading current page if not already playing
+      if (!_isPlayingScript) {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted && !_isPlayingScript && _autoReadingEnabled && !_isPaused) {
+            _playTeachingScriptForPage(_currentPageNumber);
+          }
+        });
+      }
     }
   }
 

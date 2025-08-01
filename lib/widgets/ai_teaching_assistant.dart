@@ -22,6 +22,8 @@ class AITeachingAssistant extends StatefulWidget {
   final VoidCallback? onToggleAutoReading;
   final VoidCallback? onPlayPause;
   final VoidCallback? onNextPage;
+  final VoidCallback? onPauseTeaching; // Pause teaching voice when user interacts
+  final VoidCallback? onResumeTeaching; // Resume teaching voice after user interaction
   final VoidCallback? onPreviousPage;
 
   const AITeachingAssistant({
@@ -38,6 +40,8 @@ class AITeachingAssistant extends StatefulWidget {
     this.onToggleAutoReading,
     this.onPlayPause,
     this.onNextPage,
+    this.onPauseTeaching,
+    this.onResumeTeaching,
     this.onPreviousPage,
   });
 
@@ -256,11 +260,16 @@ class _AITeachingAssistantState extends State<AITeachingAssistant>
   void _sendMessage() async {
     final message = _messageController.text.trim();
     if (message.isEmpty || _isProcessing) return;
-    
+
+    // Pause teaching voice when user sends message
+    if (widget.onPauseTeaching != null) {
+      widget.onPauseTeaching!();
+    }
+
     setState(() {
       _isProcessing = true;
     });
-    
+
     _addMessage("user", message);
     _messageController.clear();
     
@@ -300,6 +309,8 @@ class _AITeachingAssistantState extends State<AITeachingAssistant>
     setState(() {
       _isProcessing = false;
     });
+
+    // Resume teaching will be handled by audio completion listener
   }
 
   Future<void> _playAudioFromBase64(String audioBase64) async {
@@ -325,6 +336,15 @@ class _AITeachingAssistantState extends State<AITeachingAssistant>
             isSpeaking = false;
           });
           _gestureController.stop();
+
+          // Resume teaching voice after AI response audio finishes
+          if (widget.onResumeTeaching != null) {
+            Future.delayed(const Duration(milliseconds: 500), () {
+              if (!isSpeaking && mounted) {
+                widget.onResumeTeaching!();
+              }
+            });
+          }
         }
       });
       
@@ -353,11 +373,16 @@ class _AITeachingAssistantState extends State<AITeachingAssistant>
         isListening = false;
       });
     } else {
+      // Pause teaching voice when user starts voice input
+      if (widget.onPauseTeaching != null) {
+        widget.onPauseTeaching!();
+      }
+
       // Start listening
       setState(() {
         isListening = true;
       });
-      
+
       await _speechToText.listen(
         onResult: (result) {
           if (result.finalResult) {
@@ -676,11 +701,6 @@ class _AITeachingAssistantState extends State<AITeachingAssistant>
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Row(
             children: [
-              _buildQuickAction(
-                icon: Icons.play_arrow,
-                label: "Đọc trang",
-                onTap: (_isProcessing || !_isAIConnected) ? null : _readCurrentPage,
-              ),
               _buildQuickAction(
                 icon: Icons.refresh,
                 label: "Kết nối",

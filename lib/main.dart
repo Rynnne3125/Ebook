@@ -10,6 +10,7 @@ import 'utils/app_colors.dart';
 import 'utils/responsive_utils.dart';
 import 'widgets/floating_particles.dart';
 import 'services/ai_server_manager.dart';
+import 'utils/server_manager.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,12 +36,19 @@ void main() async {
     print('🤖 Initializing AI Server...');
     print('📁 Working directory: ${Directory.current.path}');
 
-    final serverStarted = await AIServerManager.startServer();
-    if (serverStarted) {
-      print('✅ AI Server ready');
+    // Try new ServerManager first
+    final newServerStarted = await ServerManager.startServers();
+    if (newServerStarted) {
+      print('✅ Python servers started successfully');
     } else {
-      print('⚠️ AI Server not available - manual start required');
-      print('💡 To start manually, run: python assistant.py');
+      print('⚠️ New server manager failed, trying legacy...');
+      final serverStarted = await AIServerManager.startServer();
+      if (serverStarted) {
+        print('✅ AI Server ready');
+      } else {
+        print('⚠️ AI Server not available - manual start required');
+        print('💡 To start manually, run: python assistant.py && python app.py');
+      }
     }
   } catch (e) {
     print('❌ AI Server initialization error: $e');

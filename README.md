@@ -4,7 +4,22 @@
 
 ## 🚀 Cách Chạy Ứng Dụng
 
-### Phương pháp 1: Hệ thống hoàn chỉnh (Khuyến nghị)
+### Phương pháp 1: Script tự động mới (Khuyến nghị)
+
+**Windows:**
+```bash
+# Chạy script tự động start servers + Flutter
+start_servers.bat
+```
+
+**Linux/macOS:**
+```bash
+# Chạy script tự động start servers + Flutter
+chmod +x start_servers.sh
+./start_servers.sh
+```
+
+### Phương pháp 2: Hệ thống hoàn chỉnh (Cũ)
 
 **Windows:**
 ```bash
