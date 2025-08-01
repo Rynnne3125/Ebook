@@ -321,6 +321,21 @@ def generate_teaching_script(page_content, page_number, book_title):
             "duration_minutes": 2
         }
 
+@app.route('/', methods=['GET'])
+def root():
+    """Root endpoint"""
+    return jsonify({
+        'message': 'EBook Backend API Server',
+        'status': 'running',
+        'version': '1.0.0',
+        'endpoints': {
+            'health': '/health',
+            'upload': '/upload-pdf',
+            'chat': '/chat',
+            'read_script': '/read-teaching-script'
+        }
+    })
+
 @app.route('/health', methods=['GET'])
 def health_check():
     return jsonify({'status': 'healthy', 'timestamp': datetime.now().isoformat()})
