@@ -20,18 +20,14 @@ class AIService {
       return backendUrl;
     }
 
-    // 3. Auto-detect production web deployment
+    // 3. Web platform - always use Render.com
     if (kIsWeb) {
-      final currentHost = Uri.base.host;
-      if (currentHost != 'localhost' && currentHost != '127.0.0.1') {
-        // Try Render.com pattern first
-        final renderUrl = 'https://ebook-baend.onrender.com';
-        print('🌐 Production web detected, trying Render: $renderUrl');
-        return renderUrl;
-      }
+      final renderUrl = 'https://ebook-baend.onrender.com';
+      print('🌐 Web platform - Using Render backend: $renderUrl');
+      return renderUrl;
     }
 
-    // 4. Default to localhost for development
+    // 4. Default to localhost for development (desktop/mobile)
     print('💻 Using local development backend: http://localhost:5001');
     return 'http://localhost:5001';
   }
