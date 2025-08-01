@@ -22,17 +22,28 @@ import uuid
 
 # === Assistant imports ===
 try:
-    import speech_recognition as sr
+    # Import core dependencies first
     import pygame
     import edge_tts
     import asyncio
     import re
     import threading
     import queue
+
+    # Try speech_recognition with fallback
+    try:
+        import speech_recognition as sr
+        SPEECH_RECOGNITION_AVAILABLE = True
+    except ImportError:
+        print("⚠️ speech_recognition not available, voice input disabled")
+        SPEECH_RECOGNITION_AVAILABLE = False
+        sr = None
+
     ASSISTANT_AVAILABLE = True
 except ImportError as e:
     print(f"⚠️ Assistant dependencies not available: {e}")
     ASSISTANT_AVAILABLE = False
+    SPEECH_RECOGNITION_AVAILABLE = False
 
 # Initialize Flask app
 app = Flask(__name__)
