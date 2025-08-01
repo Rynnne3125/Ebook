@@ -20,9 +20,48 @@ from dotenv import load_dotenv
 load_dotenv()
 import uuid
 
+# === Assistant imports ===
+import speech_recognition as sr
+import pygame
+import edge_tts
+import asyncio
+import re
+import threading
+import queue
+
 # Initialize Flask app
 app = Flask(__name__)
 CORS(app)
+
+# === Assistant initialization ===
+pygame.mixer.init()
+history = []
+
+def clean_text(text):
+    return re.sub(r"[*_`>#+-]", "", text).strip()
+
+# === Edge TTS tạo audio base64 ===
+async def generate_audio_base64(text, voice="vi-VN-HoaiMyNeural"):
+    from io import BytesIO
+    mp3_fp = BytesIO()
+    communicate = edge_tts.Communicate(text, voice)
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            mp3_fp.write(chunk["data"])
+    mp3_fp.seek(0)
+    audio_base64 = base64.b64encode(mp3_fp.read()).decode('utf-8')
+    return audio_base64
+
+# === Conversation Memory Management ===
+conversation_memory = {
+    'session_started': False,
+    'topics_discussed': [],
+    'student_questions': [],
+    'current_lesson': None,
+    'greeting_count': 0,
+    'last_greeting_time': None,
+    'conversation_context': []
+}
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
@@ -414,10 +453,251 @@ def get_book(book_id):
     # This would typically fetch from database
     return jsonify({'error': 'Book not found'}), 404
 
+# === Assistant Functions ===
+def get_conversation_context():
+    """Get relevant conversation context for AI"""
+    context_parts = []
+
+    if conversation_memory['current_lesson']:
+        context_parts.append(f"Bài học hiện tại: {conversation_memory['current_lesson']}")
+
+    if conversation_memory['topics_discussed']:
+        topics = ", ".join(conversation_memory['topics_discussed'][-3:])
+        context_parts.append(f"Các chủ đề đã thảo luận: {topics}")
+
+    if conversation_memory['student_questions']:
+        recent_questions = conversation_memory['student_questions'][-2:]
+        context_parts.append(f"Câu hỏi gần đây: {'; '.join(recent_questions)}")
+
+    return "\n".join(context_parts)
+
+def update_conversation_memory(user_text, page_content=""):
+    """Update conversation memory with new interaction"""
+    import time
+
+    # Mark session as started
+    if not conversation_memory['session_started']:
+        conversation_memory['session_started'] = True
+
+    # Extract lesson from page content
+    if page_content and "Bài" in page_content:
+        lesson_match = page_content.split('\n')[0] if '\n' in page_content else page_content[:50]
+        if lesson_match != conversation_memory['current_lesson']:
+            conversation_memory['current_lesson'] = lesson_match
+
+    # Store student question
+    conversation_memory['student_questions'].append(user_text)
+    if len(conversation_memory['student_questions']) > 5:
+        conversation_memory['student_questions'] = conversation_memory['student_questions'][-5:]
+
+    # Store conversation context
+    conversation_memory['conversation_context'].append(f"Học sinh: {user_text}")
+    if len(conversation_memory['conversation_context']) > 10:
+        conversation_memory['conversation_context'] = conversation_memory['conversation_context'][-10:]
+
+    # Extract topics from user question
+    chemistry_keywords = ['nguyên tử', 'phân tử', 'ion', 'hóa trị', 'phương trình', 'phản ứng', 'chất', 'hỗn hợp', 'nguyên tố']
+    for keyword in chemistry_keywords:
+        if keyword in user_text.lower() and keyword not in conversation_memory['topics_discussed']:
+            conversation_memory['topics_discussed'].append(keyword)
+            if len(conversation_memory['topics_discussed']) > 10:
+                conversation_memory['topics_discussed'] = conversation_memory['topics_discussed'][-10:]
+
+def should_greet():
+    """Determine if AI should greet based on conversation context"""
+    import time
+
+    # Never greet if already greeted more than once
+    if conversation_memory['greeting_count'] >= 1:
+        return False
+
+    # Only greet at the very beginning
+    if len(conversation_memory['student_questions']) <= 1:
+        return True
+
+    return False
+
+def mark_greeting_used():
+    """Mark that a greeting was used"""
+    import time
+    conversation_memory['greeting_count'] += 1
+    conversation_memory['last_greeting_time'] = time.time()
+
+def clean_text(text):
+    """Clean text for TTS"""
+    import re
+    # Remove emojis and special characters that might cause TTS issues
+    text = re.sub(r'[^\w\s\.,!?;:\-\(\)]', '', text)
+    # Remove extra whitespace
+    text = ' '.join(text.split())
+    return text
+
+# === Xử lý hội thoại Gemini ===
+def get_gemini_reply(user_text, page_content=""):
+    try:
+        # Update conversation memory
+        update_conversation_memory(user_text, page_content)
+
+        # Build context
+        context_parts = []
+
+        if page_content:
+            context_parts.append(f"Nội dung trang hiện tại: {page_content}")
+
+        conversation_context = get_conversation_context()
+        if conversation_context:
+            context_parts.append(f"Bối cảnh cuộc trò chuyện: {conversation_context}")
+
+        context = "\n".join(context_parts)
+
+        # Determine if greeting is needed
+        greeting_needed = should_greet()
+
+        # Build intelligent prompt based on conversation context
+        recent_context = "\n".join(conversation_memory['conversation_context'][-3:]) if conversation_memory['conversation_context'] else ""
+
+        response = gemini_model.generate_content(
+            f"""
+            Bạn là giáo viên Hóa học thông minh, tự nhiên, dạy học sinh cấp 2.
+
+            NGUYÊN TẮC QUAN TRỌNG:
+            - Trả lời ngắn gọn, súc tích (tối đa 70 từ)
+            - Đưa ra ví dụ thực tế cụ thể để học sinh dễ hiểu
+            - TUYỆT ĐỐI KHÔNG hỏi lại học sinh ("Các em có hiểu không?", "Còn câu hỏi nào không?")
+            - TUYỆT ĐỐI KHÔNG chào hỏi nếu đã chào rồi
+            - Trả lời tự nhiên, thông minh như giáo viên thật
+            - Tập trung vào giải thích kiến thức với ví dụ cụ thể
+            - Sử dụng ngôn ngữ đơn giản, gần gũi
+
+            BỐI CẢNH CUỘC TRÒ CHUYỆN GẦN ĐÂY:
+            {recent_context}
+
+            NỘI DUNG BÀI HỌC:
+            {context}
+
+            Câu hỏi của học sinh: "{user_text}"
+
+            {"Chào em ngắn gọn (1 câu) rồi" if greeting_needed else ""}
+            Trả lời trực tiếp với ví dụ thực tế cụ thể. KHÔNG hỏi lại.
+            """,
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.7,
+                top_p=0.9,
+                top_k=30
+            )
+        )
+
+        reply = response.text.strip()
+
+        # Mark greeting as used if it was needed
+        if greeting_needed:
+            mark_greeting_used()
+
+        # Store AI response in conversation context
+        conversation_memory['conversation_context'].append(f"Thầy: {reply}")
+        if len(conversation_memory['conversation_context']) > 10:
+            conversation_memory['conversation_context'] = conversation_memory['conversation_context'][-10:]
+
+        return reply
+    except Exception as e:
+        print(f"Gemini error: {e}")
+        return "Thầy đang bận chút, em chờ tí nhé!"
+
+# === Assistant API Routes ===
+@app.route('/chat', methods=['POST'])
+def chat():
+    try:
+        data = request.get_json()
+        user_text = data.get('message', '')
+        page_content = data.get('page_content', '')
+
+        if not user_text:
+            return jsonify({'error': 'No message provided'}), 400
+
+        # Get AI reply
+        reply = get_gemini_reply(user_text, page_content)
+
+        # Generate audio
+        audio_base64 = asyncio.run(generate_audio_base64(clean_text(reply)))
+
+        return jsonify({
+            'reply': reply,
+            'audio': audio_base64
+        })
+    except Exception as e:
+        print(f"Chat error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/generate_audio', methods=['POST'])
+def generate_audio_route():
+    try:
+        data = request.get_json()
+        text = data.get('text', '')
+
+        if not text:
+            return jsonify({'error': 'No text provided'}), 400
+
+        # Generate audio
+        audio_base64 = asyncio.run(generate_audio_base64(clean_text(text)))
+
+        return jsonify({
+            'audio': audio_base64
+        })
+    except Exception as e:
+        print(f"Audio generation error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/read-teaching-script', methods=['POST'])
+def read_teaching_script():
+    """Endpoint để đọc teaching script với voice assistant"""
+    try:
+        data = request.get_json()
+        script = data.get('script', '')
+        page_number = data.get('pageNumber', 1)
+
+        if not script:
+            return jsonify({'error': 'No script provided'}), 400
+
+        print(f"🎤 Reading teaching script for page {page_number}")
+        print(f"📖 Script length: {len(script)} characters")
+
+        # Tạo audio với Edge TTS
+        audio_base64 = asyncio.run(generate_audio_base64(clean_text(script), voice="vi-VN-HoaiMyNeural"))
+
+        return jsonify({
+            'success': True,
+            'audio': audio_base64,
+            'pageNumber': page_number,
+            'scriptLength': len(script)
+        })
+
+    except Exception as e:
+        print(f"❌ Error reading teaching script: {e}")
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
+    import os
+
+    # Render.com uses PORT environment variable, fallback to 5001 for local
+    port = int(os.environ.get('PORT', 5001))
+    debug = os.environ.get('FLASK_ENV') != 'production'
+
+    # Check if running on Render.com
+    is_render = os.environ.get('RENDER') is not None
+
     print("🚀 Starting EBook Backend API Server...")
     print("📚 Cloudinary: Configured")
-    print("📖 Heyzine API: Configured") 
+    print("📖 Heyzine API: Configured")
     print("🤖 Gemini AI: Configured")
-    print("🌐 Server: http://localhost:5001")
-    app.run(host='0.0.0.0', port=5001, debug=True)
+    print("🎤 AI Assistant: Integrated")
+
+    if is_render:
+        print(f"🌐 Running on Render.com")
+        print(f"🔗 Port: {port}")
+    else:
+        print(f"💻 Running locally")
+        print(f"🌐 Server: http://localhost:{port}")
+
+    print(f"🔧 Debug mode: {debug}")
+
+    app.run(host='0.0.0.0', port=port, debug=debug)
