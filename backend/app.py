@@ -56,7 +56,8 @@ if ASSISTANT_AVAILABLE:
         print("✅ Pygame mixer initialized")
     except Exception as e:
         print(f"⚠️ Pygame mixer init failed: {e}")
-        ASSISTANT_AVAILABLE = False
+        # Don't disable assistant for mixer failures - we can still generate audio
+        print("💡 Assistant still available for audio generation without local playback")
 
 history = []
 
