@@ -55,7 +55,6 @@ class _TurnJSFlipbookReaderPageState extends State<TurnJSFlipbookReaderPage> {
   
   // Turn.js widget controller
   TurnJSFlipbookWidget? _flipbookWidget;
-  GlobalKey<_TurnJSFlipbookWidgetState> _flipbookKey = GlobalKey();
 
   @override
   void initState() {
@@ -129,14 +128,14 @@ class _TurnJSFlipbookReaderPageState extends State<TurnJSFlipbookReaderPage> {
     try {
       _book = widget.book;
       
-      // If book has Turn.js pages data, use it
-      if (_book?.metadata != null && _book!.metadata!.containsKey('turnjs_pages')) {
-        final pagesData = _book!.metadata!['turnjs_pages'] as List;
-        _flipbookPages = pagesData.map((page) => page as Map<String, dynamic>).toList();
+      // Check if book has Turn.js pages data from Firestore
+      if (_ebookData?.turnJSPages != null && _ebookData!.turnJSPages!.isNotEmpty) {
+        _flipbookPages = _ebookData!.turnJSPages!;
         _totalPages = _flipbookPages.length;
+        print('✅ Loaded Turn.js pages from Firestore: ${_totalPages} pages');
       } else {
-        // Convert from existing PDF URL or Heyzine data
-        throw Exception('Book does not have Turn.js pages data');
+        // No Turn.js data available - need to convert PDF first
+        throw Exception('Book needs to be converted to Turn.js format first. Please upload a PDF file instead.');
       }
 
       setState(() {
@@ -153,7 +152,7 @@ class _TurnJSFlipbookReaderPageState extends State<TurnJSFlipbookReaderPage> {
 
   Future<void> _loadBookFromFirestore() async {
     try {
-      _book = await _firestoreService.getFlipBook(widget.bookId);
+      _book = await _firestoreService.getBookWithPages(widget.bookId);
       
       if (_book != null) {
         await _loadExistingBook();
@@ -175,7 +174,7 @@ class _TurnJSFlipbookReaderPageState extends State<TurnJSFlipbookReaderPage> {
 
       print('📚 Loading teaching scripts for book: ${_book!.id}');
       
-      _ebookData = await _firestoreService.getEBook(_book!.id);
+      _ebookData = await _firestoreService.getEBookWithScripts(_book!.id);
       
       if (_ebookData != null && _ebookData!.pages.isNotEmpty) {
         _teachingPages = _ebookData!.pages;
@@ -271,7 +270,10 @@ class _TurnJSFlipbookReaderPageState extends State<TurnJSFlipbookReaderPage> {
     try {
       print('🎤 Calling AI assistant to read teaching script for page $pageNumber');
       
-      final response = await AIService.readTeachingScript(script, pageNumber);
+      final response = await AIService.readTeachingScript(
+        script: script,
+        pageNumber: pageNumber,
+      );
       
       if (response['audioBase64'] != null) {
         await _playAudioFromBase64(response['audioBase64']);
@@ -374,20 +376,23 @@ class _TurnJSFlipbookReaderPageState extends State<TurnJSFlipbookReaderPage> {
   }
 
   void _goToNextPage() {
-    if (_currentPage < _totalPages) {
-      _flipbookKey.currentState?.nextPage();
+    if (_currentPage < _totalPages && _flipbookWidget != null) {
+      // Will be implemented when widget is created
+      print('📖 Go to next page: ${_currentPage + 1}');
     }
   }
 
   void _goToPreviousPage() {
-    if (_currentPage > 1) {
-      _flipbookKey.currentState?.previousPage();
+    if (_currentPage > 1 && _flipbookWidget != null) {
+      // Will be implemented when widget is created
+      print('📖 Go to previous page: ${_currentPage - 1}');
     }
   }
 
   void _goToPage(int pageNumber) {
-    if (pageNumber >= 1 && pageNumber <= _totalPages) {
-      _flipbookKey.currentState?.goToPage(pageNumber);
+    if (pageNumber >= 1 && pageNumber <= _totalPages && _flipbookWidget != null) {
+      // Will be implemented when widget is created
+      print('📖 Go to page: $pageNumber');
     }
   }
 
@@ -467,7 +472,6 @@ class _TurnJSFlipbookReaderPageState extends State<TurnJSFlipbookReaderPage> {
       children: [
         // Turn.js Flipbook
         TurnJSFlipbookWidget(
-          key: _flipbookKey,
           pages: _flipbookPages,
           onPageChanged: _onPageChanged,
           onReady: _onFlipbookReady,
@@ -522,9 +526,14 @@ class _TurnJSFlipbookReaderPageState extends State<TurnJSFlipbookReaderPage> {
               width: 300,
               height: 400,
               child: AITeachingAssistant(
-                bookId: widget.bookId,
-                currentPage: _currentPage,
-                onPageRequest: _goToPage,
+                currentPageContent: _getTeachingScriptForPage(_currentPage),
+                onNextPage: _goToNextPage,
+                onPreviousPage: _goToPreviousPage,
+                isAutoReading: _autoReadingEnabled,
+                isPlaying: _isPlayingScript,
+                isPaused: _isPaused,
+                onToggleAutoReading: _toggleAutoReading,
+                onPlayPause: _togglePause,
               ),
             ),
           ),

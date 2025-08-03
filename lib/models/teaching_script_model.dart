@@ -84,6 +84,7 @@ class EBook {
   final String? description;
   final String? heyzineUrl;
   final String? coverImageUrl;
+  final List<Map<String, dynamic>>? turnJSPages;
 
   EBook({
     required this.id,
@@ -99,6 +100,7 @@ class EBook {
     this.description,
     this.heyzineUrl,
     this.coverImageUrl,
+    this.turnJSPages,
   });
 
   factory EBook.fromJson(Map<String, dynamic> json) {
@@ -108,7 +110,7 @@ class EBook {
       author: json['author'] ?? '',
       subject: json['subject'] ?? '',
       pdfUrl: json['pdf_url'] ?? '',
-      flipbookUrl: json['flipbook_url'] ?? '',
+      flipbookUrl: json['flipbook_url'] ?? json['turnjs_url'] ?? '',
       pages: (json['pages'] as List<dynamic>?)
           ?.map((page) => BookPage.fromJson(page))
           .toList() ?? [],
@@ -120,6 +122,9 @@ class EBook {
       description: json['description'],
       heyzineUrl: json['heyzine_url'] ?? json['flipbook_url'],
       coverImageUrl: json['cover_image_url'],
+      turnJSPages: json['turnjs_pages'] != null
+          ? List<Map<String, dynamic>>.from(json['turnjs_pages'])
+          : null,
     );
   }
 

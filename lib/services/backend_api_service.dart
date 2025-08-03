@@ -176,13 +176,14 @@ class BackendApiService {
       // Import FirestoreService
       final firestoreService = FirestoreService();
 
-      // Save book with proper format matching sample books
-      final bookId = await firestoreService.saveBook(
+      // Save book with Turn.js data
+      final bookId = await firestoreService.saveBookWithTurnJS(
         title: book.title,
         description: book.description ?? 'Sách ${book.subject} - ${book.title}. Được tạo tự động từ PDF với AI teaching scripts.',
-        heyzineUrl: book.heyzineUrl ?? book.pdfUrl,
+        pdfUrl: book.pdfUrl,
+        turnJSPages: book.turnJSPages ?? [],
         coverImageUrl: book.coverImageUrl,
-        tags: [book.subject, 'AI Generated', 'Interactive'],
+        tags: [book.subject, 'AI Generated', 'Interactive', 'Turn.js'],
         subject: book.subject,
         grade: '8',  // Default grade
         chapter: 1,  // Default chapter

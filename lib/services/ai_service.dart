@@ -20,11 +20,11 @@ class AIService {
       return backendUrl;
     }
 
-    // 3. Web platform - always use Render.com
+    // 3. Web platform - use localhost for development
     if (kIsWeb) {
-      final renderUrl = 'https://ebook-baend.onrender.com';
-      print('🌐 Web platform - Using Render backend: $renderUrl');
-      return renderUrl;
+      final localUrl = 'http://localhost:5001';
+      print('🌐 Web platform - Using local backend: $localUrl');
+      return localUrl;
     }
 
     // 4. Default to localhost for development (desktop/mobile)

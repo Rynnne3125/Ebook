@@ -17,6 +17,7 @@ import fitz  # PyMuPDF for PDF to image conversion
 from PIL import Image
 # import firebase_admin
 # from firebase_admin import credentials, firestore
+# Note: Firestore save will be handled by Flutter app
 
 # Load environment variables
 load_dotenv()
@@ -439,6 +440,71 @@ def convert_pdf_to_images():
         print(f"❌ PDF conversion error: {e}")
         return jsonify({'error': str(e)}), 500
 
+def convert_pdf_to_turnjs_images(pdf_path, book_id, title):
+    """Convert PDF to images for Turn.js flipbook"""
+    try:
+        print(f"📄 Converting PDF to Turn.js images: {title}")
+        doc = fitz.open(pdf_path)
+        pages_data = []
+
+        for page_num in range(len(doc)):
+            page = doc.load_page(page_num)
+
+            # Render page to image with high quality
+            mat = fitz.Matrix(2.0, 2.0)  # 2x zoom for better quality
+            pix = page.get_pixmap(matrix=mat)
+            img_data = pix.tobytes("png")
+
+            # Convert to PIL Image for processing
+            img = Image.open(io.BytesIO(img_data))
+
+            # Optimize image size while maintaining quality
+            img.thumbnail((1200, 1600), Image.Resampling.LANCZOS)
+
+            # Save to bytes
+            img_bytes = io.BytesIO()
+            img.save(img_bytes, format='PNG', optimize=True)
+            img_bytes.seek(0)
+
+            # Upload to Cloudinary
+            try:
+                upload_result = cloudinary.uploader.upload(
+                    img_bytes.getvalue(),
+                    public_id=f"turnjs/{book_id}/page_{page_num + 1}",
+                    folder="ebook_pages",
+                    resource_type="image",
+                    format="png"
+                )
+
+                page_data = {
+                    'page_number': page_num + 1,
+                    'image_url': upload_result['secure_url'],
+                    'public_id': upload_result['public_id'],
+                    'width': img.width,
+                    'height': img.height
+                }
+                pages_data.append(page_data)
+                print(f"✅ Page {page_num + 1} uploaded successfully")
+
+            except Exception as e:
+                print(f"❌ Error uploading page {page_num + 1}: {e}")
+                return None
+
+        doc.close()
+
+        result = {
+            'book_id': book_id,
+            'total_pages': len(pages_data),
+            'pages': pages_data,
+            'created_at': datetime.now().isoformat()
+        }
+
+        return result
+
+    except Exception as e:
+        print(f"❌ Turn.js conversion error: {e}")
+        return None
+
 @app.route('/upload-pdf', methods=['POST'])
 def upload_pdf():
     """Upload PDF and process it"""
@@ -492,20 +558,18 @@ def upload_pdf():
         except Exception as e:
             print(f"⚠️ PDF URL accessibility error: {e}")
 
-        # Create Heyzine flipbook (optional - skip if fails)
-        print("📖 Creating Heyzine flipbook...")
-        print(f"🔍 PDF URL for Heyzine: {pdf_url}")
-        # Use actual PDF URL
-        heyzine_result = create_heyzine_flipbook(pdf_url, title)
-        if heyzine_result and heyzine_result.get('flipbook_url'):
-            flipbook_url = heyzine_result.get('flipbook_url', '')
-            print("✅ Heyzine flipbook created successfully")
-            print(f"🔍 Flipbook URL: {flipbook_url}")
+        # Convert PDF to Turn.js images
+        print("📖 Converting PDF to Turn.js images...")
+        turnjs_result = convert_pdf_to_turnjs_images(temp_path, book_id, title)
+        if turnjs_result and turnjs_result.get('pages'):
+            turnjs_pages = turnjs_result.get('pages', [])
+            cover_image_url = turnjs_pages[0]['image_url'] if turnjs_pages else ''
+            print(f"✅ Turn.js conversion successful - {len(turnjs_pages)} pages")
         else:
-            flipbook_url = ""  # Empty if Heyzine fails - don't use PDF URL
-            heyzine_result = None
-            print("⚠️ Heyzine flipbook creation failed")
-            print(f"🔍 Heyzine result: {heyzine_result}")
+            turnjs_pages = []
+            cover_image_url = ''
+            print("⚠️ Turn.js conversion failed")
+            print(f"🔍 Turn.js result: {turnjs_result}")
         
         # Extract text from PDF
         print("📝 Extracting text from PDF...")
@@ -542,9 +606,9 @@ def upload_pdf():
             'subject': subject,
             'grade': '8',  # Default grade
             'chapter': 1,  # Default chapter
-            'heyzineUrl': flipbook_url,  # This should be https://heyzine.com/flip-book/xxx.html or empty
-            'coverImageUrl': heyzine_result.get('thumbnail_url', '') if heyzine_result else '',
-            'tags': [subject, 'AI Generated', 'Interactive'],
+            'turnjs_pages': turnjs_pages,  # Turn.js page images
+            'coverImageUrl': cover_image_url,
+            'tags': [subject, 'AI Generated', 'Interactive', 'Turn.js'],
             'rating': 0.0,
             'viewCount': 0,
             'bookmarkCount': 0,
@@ -562,8 +626,8 @@ def upload_pdf():
             'author': author,
             'subject': subject,
             'pdf_url': pdf_url,
-            'flipbook_url': flipbook_url,
-            'heyzine_data': heyzine_result,
+            'turnjs_pages': turnjs_pages,
+            'turnjs_data': turnjs_result,
             'pages': pages_with_scripts,
             'total_pages': len(pages_with_scripts),
             'firestore_data': firestore_data,

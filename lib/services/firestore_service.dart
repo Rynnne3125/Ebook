@@ -316,9 +316,12 @@ class FirestoreService {
         'subject': backendResponse['subject'] ?? '',
         'grade': backendResponse['grade'] ?? '8',
         'chapter': backendResponse['chapter'] ?? 1,
-        'heyzineUrl': backendResponse['flipbook_url'] ?? '',
-        'coverImageUrl': backendResponse['heyzine_data']?['thumbnail_url'] ?? '',
-        'tags': List<String>.from(backendResponse['tags'] ?? []),
+        'turnJSPages': backendResponse['turnjs_pages'] ?? [],
+        'coverImageUrl': backendResponse['turnjs_pages'] != null &&
+                        (backendResponse['turnjs_pages'] as List).isNotEmpty
+                        ? backendResponse['turnjs_pages'][0]['image_url'] ?? ''
+                        : '',
+        'tags': List<String>.from(backendResponse['tags'] ?? ['Turn.js']),
         'rating': 0.0,
         'viewCount': 0,
         'bookmarkCount': 0,
@@ -386,6 +389,47 @@ class FirestoreService {
       });
     } catch (e) {
       print('Error adding book: $e');
+    }
+  }
+
+  // Save book with Turn.js data
+  Future<String?> saveBookWithTurnJS({
+    required String title,
+    required String description,
+    required String pdfUrl,
+    required List<Map<String, dynamic>> turnJSPages,
+    String? coverImageUrl,
+    List<String> tags = const [],
+    String? subject,
+    String? grade,
+    int? chapter,
+    double rating = 0.0,
+  }) async {
+    try {
+      final bookData = {
+        'title': title,
+        'description': description,
+        'pdfUrl': pdfUrl,
+        'turnJSPages': turnJSPages,
+        'coverImageUrl': coverImageUrl ?? (turnJSPages.isNotEmpty ? turnJSPages[0]['image_url'] : ''),
+        'tags': tags,
+        'subject': subject,
+        'grade': grade,
+        'chapter': chapter,
+        'rating': rating,
+        'viewCount': 0,
+        'bookmarkCount': 0,
+        'isPublished': true,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      final docRef = await _firestore.collection('books').add(bookData);
+      print('✅ Book saved with Turn.js data: ${docRef.id}');
+      return docRef.id;
+    } catch (e) {
+      print('Error saving book with Turn.js: $e');
+      return null;
     }
   }
 
