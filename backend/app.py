@@ -13,7 +13,30 @@ import google.generativeai as genai
 import json
 from datetime import datetime
 from dotenv import load_dotenv
-import fitz  # PyMuPDF for PDF to image conversion
+try:
+    import fitz  # PyMuPDF for PDF to image conversion
+    PYMUPDF_AVAILABLE = True
+    print("✅ PyMuPDF available")
+except ImportError:
+    PYMUPDF_AVAILABLE = False
+    print("⚠️ PyMuPDF not available")
+
+try:
+    from pdf2image import convert_from_bytes
+    PDF2IMAGE_AVAILABLE = True
+    print("✅ pdf2image available")
+except ImportError:
+    PDF2IMAGE_AVAILABLE = False
+    print("⚠️ pdf2image not available")
+
+try:
+    from wand.image import Image as WandImage
+    WAND_AVAILABLE = True
+    print("✅ Wand (ImageMagick) available")
+except ImportError:
+    WAND_AVAILABLE = False
+    print("⚠️ Wand not available")
+
 from PIL import Image
 # import firebase_admin
 # from firebase_admin import credentials, firestore
@@ -444,53 +467,62 @@ def convert_pdf_to_turnjs_images(pdf_path, book_id, title):
     """Convert PDF to images for Turn.js flipbook"""
     try:
         print(f"📄 Converting PDF to Turn.js images: {title}")
-        doc = fitz.open(pdf_path)
         pages_data = []
 
-        for page_num in range(len(doc)):
-            page = doc.load_page(page_num)
+        if PYMUPDF_AVAILABLE:
+            # Use PyMuPDF (preferred)
+            print("🔧 Using PyMuPDF for PDF conversion")
+            doc = fitz.open(pdf_path)
 
-            # Render page to image with high quality
-            mat = fitz.Matrix(2.0, 2.0)  # 2x zoom for better quality
-            pix = page.get_pixmap(matrix=mat)
-            img_data = pix.tobytes("png")
+            for page_num in range(len(doc)):
+                page = doc.load_page(page_num)
+                # Render page to image with high quality
+                mat = fitz.Matrix(2.0, 2.0)  # 2x zoom for better quality
+                pix = page.get_pixmap(matrix=mat)
+                img_data = pix.tobytes("png")
+                # Convert to PIL Image for processing
+                img = Image.open(io.BytesIO(img_data))
 
-            # Convert to PIL Image for processing
-            img = Image.open(io.BytesIO(img_data))
+                # Process and upload this page
+                page_data = process_and_upload_page(img, page_num, book_id)
+                if page_data:
+                    pages_data.append(page_data)
 
-            # Optimize image size while maintaining quality
-            img.thumbnail((1200, 1600), Image.Resampling.LANCZOS)
+            doc.close()
 
-            # Save to bytes
-            img_bytes = io.BytesIO()
-            img.save(img_bytes, format='PNG', optimize=True)
-            img_bytes.seek(0)
+        elif PDF2IMAGE_AVAILABLE:
+            # Use pdf2image as fallback
+            print("🔧 Using pdf2image for PDF conversion")
+            with open(pdf_path, 'rb') as pdf_file:
+                pdf_bytes = pdf_file.read()
 
-            # Upload to Cloudinary
-            try:
-                upload_result = cloudinary.uploader.upload(
-                    img_bytes.getvalue(),
-                    public_id=f"turnjs/{book_id}/page_{page_num + 1}",
-                    folder="ebook_pages",
-                    resource_type="image",
-                    format="png"
-                )
+            # Convert PDF to images
+            images = convert_from_bytes(pdf_bytes, dpi=200, fmt='PNG')
 
-                page_data = {
-                    'page_number': page_num + 1,
-                    'image_url': upload_result['secure_url'],
-                    'public_id': upload_result['public_id'],
-                    'width': img.width,
-                    'height': img.height
-                }
-                pages_data.append(page_data)
-                print(f"✅ Page {page_num + 1} uploaded successfully")
+            for page_num, img in enumerate(images):
+                # Process and upload this page
+                page_data = process_and_upload_page(img, page_num, book_id)
+                if page_data:
+                    pages_data.append(page_data)
 
-            except Exception as e:
-                print(f"❌ Error uploading page {page_num + 1}: {e}")
-                return None
+        elif WAND_AVAILABLE:
+            # Use Wand (ImageMagick) as fallback
+            print("🔧 Using Wand (ImageMagick) for PDF conversion")
+            with WandImage(filename=pdf_path, resolution=200) as pdf_img:
+                for page_num, page in enumerate(pdf_img.sequence):
+                    with WandImage(page) as single_page:
+                        single_page.format = 'png'
+                        # Convert to PIL Image
+                        img_blob = single_page.make_blob()
+                        img = Image.open(io.BytesIO(img_blob))
 
-        doc.close()
+                        # Process and upload this page
+                        page_data = process_and_upload_page(img, page_num, book_id)
+                        if page_data:
+                            pages_data.append(page_data)
+
+        else:
+            raise Exception("No PDF processing library available. Install PyMuPDF, pdf2image, or Wand.")
 
         result = {
             'book_id': book_id,
@@ -503,6 +535,41 @@ def convert_pdf_to_turnjs_images(pdf_path, book_id, title):
 
     except Exception as e:
         print(f"❌ Turn.js conversion error: {e}")
+        return None
+
+def process_and_upload_page(img, page_num, book_id):
+    """Process and upload a single page image"""
+    try:
+        # Optimize image size while maintaining quality
+        img.thumbnail((1200, 1600), Image.Resampling.LANCZOS)
+
+        # Save to bytes
+        img_bytes = io.BytesIO()
+        img.save(img_bytes, format='PNG', optimize=True)
+        img_bytes.seek(0)
+
+        # Upload to Cloudinary
+        upload_result = cloudinary.uploader.upload(
+            img_bytes.getvalue(),
+            public_id=f"turnjs/{book_id}/page_{page_num + 1}",
+            folder="ebook_pages",
+            resource_type="image",
+            format="png"
+        )
+
+        page_data = {
+            'page_number': page_num + 1,
+            'image_url': upload_result['secure_url'],
+            'public_id': upload_result['public_id'],
+            'width': img.width,
+            'height': img.height
+        }
+
+        print(f"✅ Page {page_num + 1} uploaded successfully")
+        return page_data
+
+    except Exception as e:
+        print(f"❌ Error uploading page {page_num + 1}: {e}")
         return None
 
 @app.route('/upload-pdf', methods=['POST'])
