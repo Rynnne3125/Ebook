@@ -37,7 +37,16 @@ except ImportError:
     WAND_AVAILABLE = False
     print("⚠️ Wand not available")
 
-from PIL import Image
+try:
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import letter
+    REPORTLAB_AVAILABLE = True
+    print("✅ ReportLab available")
+except ImportError:
+    REPORTLAB_AVAILABLE = False
+    print("⚠️ ReportLab not available")
+
+from PIL import Image, ImageDraw, ImageFont
 # import firebase_admin
 # from firebase_admin import credentials, firestore
 # Note: Firestore save will be handled by Flutter app
@@ -522,7 +531,24 @@ def convert_pdf_to_turnjs_images(pdf_path, book_id, title):
                             pages_data.append(page_data)
 
         else:
-            raise Exception("No PDF processing library available. Install PyMuPDF, pdf2image, or Wand.")
+            # Last resort: Extract text from PDF and create text-based images
+            print("🔧 Using PyPDF2 text extraction + PIL image generation")
+            import PyPDF2
+
+            with open(pdf_path, 'rb') as pdf_file:
+                pdf_reader = PyPDF2.PdfReader(pdf_file)
+
+                for page_num, page in enumerate(pdf_reader.pages):
+                    # Extract text from page
+                    text = page.extract_text()
+
+                    # Create image from text
+                    img = create_text_image(text, page_num + 1)
+
+                    # Process and upload this page
+                    page_data = process_and_upload_page(img, page_num, book_id)
+                    if page_data:
+                        pages_data.append(page_data)
 
         result = {
             'book_id': book_id,
@@ -571,6 +597,63 @@ def process_and_upload_page(img, page_num, book_id):
     except Exception as e:
         print(f"❌ Error uploading page {page_num + 1}: {e}")
         return None
+
+def create_text_image(text, page_number):
+    """Create an image from text content"""
+    try:
+        # Create a white background image
+        width, height = 1200, 1600
+        img = Image.new('RGB', (width, height), color='white')
+        draw = ImageDraw.Draw(img)
+
+        # Try to use a default font
+        try:
+            font = ImageFont.truetype("arial.ttf", 24)
+        except:
+            font = ImageFont.load_default()
+
+        # Add page number at top
+        draw.text((50, 50), f"Page {page_number}", fill='black', font=font)
+
+        # Add text content with word wrapping
+        y_position = 100
+        line_height = 30
+        max_width = width - 100
+
+        words = text.split()
+        lines = []
+        current_line = ""
+
+        for word in words:
+            test_line = current_line + " " + word if current_line else word
+            bbox = draw.textbbox((0, 0), test_line, font=font)
+            if bbox[2] <= max_width:
+                current_line = test_line
+            else:
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+
+        if current_line:
+            lines.append(current_line)
+
+        # Draw text lines
+        for line in lines[:40]:  # Limit to 40 lines per page
+            draw.text((50, y_position), line, fill='black', font=font)
+            y_position += line_height
+            if y_position > height - 100:
+                break
+
+        return img
+
+    except Exception as e:
+        print(f"❌ Error creating text image: {e}")
+        # Return a simple placeholder image
+        img = Image.new('RGB', (1200, 1600), color='lightgray')
+        draw = ImageDraw.Draw(img)
+        draw.text((50, 50), f"Page {page_number}", fill='black')
+        draw.text((50, 100), "Text extraction failed", fill='black')
+        return img
 
 @app.route('/upload-pdf', methods=['POST'])
 def upload_pdf():

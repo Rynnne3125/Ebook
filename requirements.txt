@@ -10,6 +10,6 @@ edge-tts==6.1.12
 pygame==2.6.1
 SpeechRecognition==3.10.0
 gunicorn==21.2.0
-# Use Wand (ImageMagick) for PDF to image conversion - works on Render.com
-Wand==0.6.13
+# Minimal approach - use only PyPDF2 and create text-based images
 Pillow==10.4.0
+reportlab==4.0.4
