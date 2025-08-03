@@ -13,6 +13,8 @@ import google.generativeai as genai
 import json
 from datetime import datetime
 from dotenv import load_dotenv
+import fitz  # PyMuPDF for PDF to image conversion
+from PIL import Image
 # import firebase_admin
 # from firebase_admin import credentials, firestore
 
@@ -22,17 +24,28 @@ import uuid
 
 # === Assistant imports ===
 try:
-    import speech_recognition as sr
+    # Import core dependencies first
     import pygame
     import edge_tts
     import asyncio
     import re
     import threading
     import queue
+
+    # Try speech_recognition with fallback
+    try:
+        import speech_recognition as sr
+        SPEECH_RECOGNITION_AVAILABLE = True
+    except ImportError:
+        print("⚠️ speech_recognition not available, voice input disabled")
+        SPEECH_RECOGNITION_AVAILABLE = False
+        sr = None
+
     ASSISTANT_AVAILABLE = True
 except ImportError as e:
     print(f"⚠️ Assistant dependencies not available: {e}")
     ASSISTANT_AVAILABLE = False
+    SPEECH_RECOGNITION_AVAILABLE = False
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -45,7 +58,8 @@ if ASSISTANT_AVAILABLE:
         print("✅ Pygame mixer initialized")
     except Exception as e:
         print(f"⚠️ Pygame mixer init failed: {e}")
-        ASSISTANT_AVAILABLE = False
+        # Don't disable assistant for mixer failures - we can still generate audio
+        print("💡 Assistant still available for audio generation without local playback")
 
 history = []
 
@@ -310,9 +324,120 @@ def generate_teaching_script(page_content, page_number, book_title):
             "duration_minutes": 2
         }
 
+@app.route('/', methods=['GET'])
+def root():
+    """Root endpoint"""
+    return jsonify({
+        'message': 'EBook Backend API Server',
+        'status': 'running',
+        'version': '1.0.0',
+        'endpoints': {
+            'health': '/health',
+            'upload': '/upload-pdf',
+            'chat': '/chat',
+            'read_script': '/read-teaching-script'
+        }
+    })
+
 @app.route('/health', methods=['GET'])
 def health_check():
     return jsonify({'status': 'healthy', 'timestamp': datetime.now().isoformat()})
+
+@app.route('/convert-pdf-to-images', methods=['POST'])
+def convert_pdf_to_images():
+    """Convert PDF pages to images for Turn.js flipbook"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+
+        if not file.filename.lower().endswith('.pdf'):
+            return jsonify({'error': 'File must be a PDF'}), 400
+
+        print(f"🔄 Converting PDF to images: {file.filename}")
+
+        # Read PDF file
+        pdf_bytes = file.read()
+
+        # Open PDF with PyMuPDF
+        pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
+
+        pages_data = []
+        total_pages = len(pdf_document)
+
+        print(f"📄 Processing {total_pages} pages...")
+
+        for page_num in range(total_pages):
+            try:
+                # Get page
+                page = pdf_document.load_page(page_num)
+
+                # Convert to image (300 DPI for good quality)
+                mat = fitz.Matrix(2.0, 2.0)  # 2x zoom = ~300 DPI
+                pix = page.get_pixmap(matrix=mat)
+
+                # Convert to PIL Image
+                img_data = pix.tobytes("png")
+                img = Image.open(io.BytesIO(img_data))
+
+                # Optimize image size (max width 1200px)
+                if img.width > 1200:
+                    ratio = 1200 / img.width
+                    new_height = int(img.height * ratio)
+                    img = img.resize((1200, new_height), Image.Resampling.LANCZOS)
+
+                # Convert to bytes
+                img_buffer = io.BytesIO()
+                img.save(img_buffer, format='JPEG', quality=85, optimize=True)
+                img_bytes = img_buffer.getvalue()
+
+                # Upload to Cloudinary
+                upload_result = cloudinary.uploader.upload(
+                    img_bytes,
+                    folder=f"ebook_pages/{file.filename.replace('.pdf', '')}",
+                    public_id=f"page_{page_num + 1}",
+                    format="jpg",
+                    quality="auto:good"
+                )
+
+                page_data = {
+                    'pageNumber': page_num + 1,
+                    'imageUrl': upload_result['secure_url'],
+                    'width': img.width,
+                    'height': img.height,
+                    'cloudinaryId': upload_result['public_id']
+                }
+
+                pages_data.append(page_data)
+                print(f"✅ Page {page_num + 1}/{total_pages} converted and uploaded")
+
+            except Exception as e:
+                print(f"❌ Error processing page {page_num + 1}: {e}")
+                # Add placeholder for failed page
+                pages_data.append({
+                    'pageNumber': page_num + 1,
+                    'imageUrl': '',
+                    'error': str(e)
+                })
+
+        pdf_document.close()
+
+        result = {
+            'success': True,
+            'totalPages': total_pages,
+            'pages': pages_data,
+            'filename': file.filename
+        }
+
+        print(f"🎉 PDF conversion completed: {total_pages} pages")
+        return jsonify(result)
+
+    except Exception as e:
+        print(f"❌ PDF conversion error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/upload-pdf', methods=['POST'])
 def upload_pdf():
