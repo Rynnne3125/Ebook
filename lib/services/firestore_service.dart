@@ -24,11 +24,25 @@ class FirestoreService {
   // Add sample chemistry books data (only if not exists)
   Future<void> addSampleChemistryBooks() async {
     try {
+      // Check if Turn.js test book already exists
+      final testBookSnapshot = await _firestore
+          .collection('books')
+          .where('title', isEqualTo: 'Test Turn.js Book')
+          .limit(1)
+          .get();
+
+      if (testBookSnapshot.docs.isNotEmpty) {
+        print('Turn.js test book already exists, skipping...');
+        return;
+      }
+
       // Check if sample data already exists
       if (await _sampleDataExists()) {
         print('Sample chemistry books already exist, skipping...');
         return;
       }
+
+      print('Adding sample chemistry books...');
 
       print('Adding sample chemistry books...');
 
@@ -50,8 +64,40 @@ class FirestoreService {
         'rating': 4.8,
       });
 
-      // Add other books...
-      
+      // Add Turn.js test book
+      await _firestore.collection('books').add({
+        'title': 'Test Turn.js Book',
+        'description': 'Test book for Turn.js flipbook reader with sample data',
+        'turnJSPages': [
+          {
+            "height": 1553,
+            "image_url": "https://res.cloudinary.com/ddjrbkhpx/image/upload/v1754197755/ebook_pages/turnjs/1fdaee50-a751-4ce2-8909-d314ee72507c/page_1.png",
+            "page_number": 1,
+            "public_id": "ebook_pages/turnjs/1fdaee50-a751-4ce2-8909-d314ee72507c/page_1",
+            "width": 1200
+          }
+        ],
+        'coverImageUrl': 'https://res.cloudinary.com/ddjrbkhpx/image/upload/v1754197755/ebook_pages/turnjs/1fdaee50-a751-4ce2-8909-d314ee72507c/page_1.png',
+        'tags': ['Test', 'Turn.js', 'Sample'],
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'viewCount': 0,
+        'bookmarkCount': 0,
+        'isPublished': true,
+        'subject': 'Test',
+        'grade': '8',
+        'chapter': 1,
+        'rating': 5.0,
+        'pages': [
+          {
+            'page_number': 1,
+            'content': 'Test page content for Turn.js flipbook',
+            'teaching_script': 'Đây là trang test cho Turn.js flipbook reader. Chúng ta sẽ kiểm tra xem Turn.js có hoạt động đúng không.'
+          }
+        ],
+        'total_pages': 1,
+      });
+
       print('Sample chemistry books added successfully!');
     } catch (e) {
       if (e.toString().contains('permission-denied')) {
@@ -474,6 +520,13 @@ class FirestoreService {
         print('📚 Sorted ${pages.length} pages by pageNumber');
       }
 
+      // Parse Turn.js pages data
+      List<Map<String, dynamic>>? turnJSPages;
+      if (data['turnJSPages'] != null) {
+        turnJSPages = List<Map<String, dynamic>>.from(data['turnJSPages']);
+        print('📖 Found ${turnJSPages.length} Turn.js pages');
+      }
+
       return EBook(
         id: doc.id,
         title: data['title'] ?? '',
@@ -487,6 +540,7 @@ class FirestoreService {
             ? DateTime.parse(data['created_at'])
             : DateTime.now(),
         heyzineData: data['heyzine_data'],
+        turnJSPages: turnJSPages,
       );
 
     } catch (e) {

@@ -127,7 +127,12 @@ class _TurnJSFlipbookReaderPageState extends State<TurnJSFlipbookReaderPage> {
   Future<void> _loadExistingBook() async {
     try {
       _book = widget.book;
-      
+
+      // Load EBook data first to get Turn.js pages
+      if (_book?.id != null) {
+        _ebookData = await _firestoreService.getEBookWithScripts(_book!.id);
+      }
+
       // Check if book has Turn.js pages data from Firestore
       if (_ebookData?.turnJSPages != null && _ebookData!.turnJSPages!.isNotEmpty) {
         _flipbookPages = _ebookData!.turnJSPages!;
@@ -173,9 +178,12 @@ class _TurnJSFlipbookReaderPageState extends State<TurnJSFlipbookReaderPage> {
       if (_book?.id == null) return;
 
       print('📚 Loading teaching scripts for book: ${_book!.id}');
-      
-      _ebookData = await _firestoreService.getEBookWithScripts(_book!.id);
-      
+
+      // Load _ebookData if not already loaded
+      if (_ebookData == null) {
+        _ebookData = await _firestoreService.getEBookWithScripts(_book!.id);
+      }
+
       if (_ebookData != null && _ebookData!.pages.isNotEmpty) {
         _teachingPages = _ebookData!.pages;
         print('📄 Loaded ${_teachingPages.length} teaching pages');

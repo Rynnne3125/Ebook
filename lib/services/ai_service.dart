@@ -20,16 +20,16 @@ class AIService {
       return backendUrl;
     }
 
-    // 3. Web platform - use localhost for development
+    // 3. Web platform - use Render.com production backend
     if (kIsWeb) {
-      final localUrl = 'http://localhost:5001';
-      print('🌐 Web platform - Using local backend: $localUrl');
-      return localUrl;
+      final renderUrl = 'https://ebook-backend-ggqr.onrender.com';
+      print('🌐 Web platform - Using Render backend: $renderUrl');
+      return renderUrl;
     }
 
-    // 4. Default to localhost for development (desktop/mobile)
-    print('💻 Using local development backend: http://localhost:5001');
-    return 'http://localhost:5001';
+    // 4. Default to Render.com for production
+    print('🚀 Using Render.com production backend: https://ebook-backend-ggqr.onrender.com');
+    return 'https://ebook-backend-ggqr.onrender.com';
   }
   
   static Future<Map<String, dynamic>> sendMessage({
