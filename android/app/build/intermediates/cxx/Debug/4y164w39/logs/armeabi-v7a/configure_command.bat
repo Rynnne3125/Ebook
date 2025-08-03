@@ -1,0 +1,20 @@
+@echo off
+"C:\\Users\\ACER\\AppData\\Local\\Android\\sdk\\cmake\\3.22.1\\bin\\cmake.exe" ^
+  "-HD:\\flutter_windows_3.32.6-stable\\flutter\\packages\\flutter_tools\\gradle\\src\\main\\scripts" ^
+  "-DCMAKE_SYSTEM_NAME=Android" ^
+  "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON" ^
+  "-DCMAKE_SYSTEM_VERSION=21" ^
+  "-DANDROID_PLATFORM=android-21" ^
+  "-DANDROID_ABI=armeabi-v7a" ^
+  "-DCMAKE_ANDROID_ARCH_ABI=armeabi-v7a" ^
+  "-DANDROID_NDK=C:\\Users\\ACER\\AppData\\Local\\Android\\sdk\\ndk\\26.3.11579264" ^
+  "-DCMAKE_ANDROID_NDK=C:\\Users\\ACER\\AppData\\Local\\Android\\sdk\\ndk\\26.3.11579264" ^
+  "-DCMAKE_TOOLCHAIN_FILE=C:\\Users\\ACER\\AppData\\Local\\Android\\sdk\\ndk\\26.3.11579264\\build\\cmake\\android.toolchain.cmake" ^
+  "-DCMAKE_MAKE_PROGRAM=C:\\Users\\ACER\\AppData\\Local\\Android\\sdk\\cmake\\3.22.1\\bin\\ninja.exe" ^
+  "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=C:\\Users\\ACER\\AndroidStudioProjects\\sachdientudemo\\android\\app\\build\\intermediates\\cxx\\Debug\\4y164w39\\obj\\armeabi-v7a" ^
+  "-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=C:\\Users\\ACER\\AndroidStudioProjects\\sachdientudemo\\android\\app\\build\\intermediates\\cxx\\Debug\\4y164w39\\obj\\armeabi-v7a" ^
+  "-DCMAKE_BUILD_TYPE=Debug" ^
+  "-BC:\\Users\\ACER\\AndroidStudioProjects\\sachdientudemo\\android\\app\\.cxx\\Debug\\4y164w39\\armeabi-v7a" ^
+  -GNinja ^
+  -Wno-dev ^
+  --no-warn-unused-cli
