@@ -20,11 +20,11 @@ class AIService {
       return backendUrl;
     }
 
-    // 3. Web platform - use Render.com production backend
+    // 3. Web platform - use local backend for testing (Render.com not ready)
     if (kIsWeb) {
-      final renderUrl = 'https://ebook-backend-ggqr.onrender.com';
-      print('🌐 Web platform - Using Render backend: $renderUrl');
-      return renderUrl;
+      final localUrl = 'http://localhost:5001';
+      print('🌐 Web platform - Using local backend: $localUrl');
+      return localUrl;
     }
 
     // 4. Default to Render.com for production

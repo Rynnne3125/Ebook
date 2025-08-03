@@ -10,5 +10,6 @@ edge-tts==6.1.12
 pygame==2.6.1
 SpeechRecognition==3.10.0
 gunicorn==21.2.0
-PyMuPDF==1.23.26
+# Use stable PyMuPDF version that works on Render.com
+PyMuPDF==1.22.5
 Pillow==10.4.0
