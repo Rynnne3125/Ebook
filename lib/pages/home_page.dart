@@ -6,6 +6,7 @@ import '../utils/app_colors.dart';
 import '../widgets/book_card.dart';
 import '../widgets/floating_particles.dart';
 import '../pages/flipbook_reader_page.dart';
+import '../pages/turnjs_flipbook_reader_page.dart';
 import '../models/flipbook_page.dart';
 import '../services/firestore_service.dart';
 import '../models/flipbook_model.dart';
@@ -1043,14 +1044,47 @@ class _HomePageState extends State<HomePage>
   }
 
   void _openBookReader(FlipBookModel book) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => FlipBookReaderPage(
-          bookId: book.id,
-          book: book,
-        ),
-      ),
+    // Show dialog to choose reader type
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Chọn loại đọc sách'),
+          content: const Text('Bạn muốn sử dụng loại flipbook nào?'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => FlipBookReaderPage(
+                      bookId: book.id,
+                      book: book,
+                    ),
+                  ),
+                );
+              },
+              child: const Text('Heyzine (Cũ)'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => TurnJSFlipbookReaderPage(
+                      bookId: book.id,
+                      book: book,
+                    ),
+                  ),
+                );
+              },
+              child: const Text('Turn.js (Mới)'),
+            ),
+          ],
+        );
+      },
     );
   }
 

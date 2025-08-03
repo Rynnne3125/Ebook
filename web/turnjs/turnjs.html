@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Turn.js FlipBook Reader</title>
+    
+    <!-- Turn.js CSS -->
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: #333;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        
+        .flipbook-container {
+            position: relative;
+            width: 90vw;
+            height: 90vh;
+            max-width: 1200px;
+            max-height: 800px;
+            background: #fff;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        #flipbook {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .page {
+            width: 100%;
+            height: 100%;
+            background: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .page img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        
+        .page-number {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 12px;
+        }
+        
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            color: #666;
+        }
+        
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            z-index: 1000;
+        }
+        
+        .control-btn {
+            background: rgba(0,0,0,0.7);
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+        
+        .control-btn:hover {
+            background: rgba(0,0,0,0.9);
+        }
+        
+        .control-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .flipbook-container {
+                width: 95vw;
+                height: 85vh;
+            }
+            
+            .controls {
+                bottom: 10px;
+            }
+            
+            .control-btn {
+                padding: 8px 12px;
+                font-size: 12px;
+            }
+        }
+        
+        /* Turn.js specific styles */
+        .turn-page {
+            background-color: white;
+            background-size: 100% 100%;
+        }
+        
+        .turn-page-wrapper {
+            perspective: 2000px;
+        }
+        
+        /* Loading animation */
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+    
+    <!-- jQuery (required for Turn.js) -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    
+    <!-- Turn.js Library -->
+    <script src="https://cdn.jsdelivr.net/npm/turn.js@1.0.2/turn.min.js"></script>
+</head>
+<body>
+    <div class="flipbook-container">
+        <div id="flipbook">
+            <!-- Pages will be dynamically loaded here -->
+            <div class="page loading">
+                <div>
+                    <div class="spinner"></div>
+                    <p style="margin-top: 20px;">Đang tải sách...</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button class="control-btn" id="prevBtn" onclick="previousPage()">◀ Trang trước</button>
+            <button class="control-btn" id="pageInfo">Trang 1</button>
+            <button class="control-btn" id="nextBtn" onclick="nextPage()">Trang sau ▶</button>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let flipbook;
+        let currentPage = 1;
+        let totalPages = 0;
+        let pages = [];
+        let isInitialized = false;
+        
+        // Flutter communication bridge
+        window.flutterBridge = {
+            // Called by Flutter to initialize flipbook
+            initializeFlipbook: function(pagesData) {
+                console.log('🔄 Initializing flipbook with', pagesData.length, 'pages');
+                pages = pagesData;
+                totalPages = pages.length;
+                loadFlipbook();
+            },
+            
+            // Called by Flutter to go to specific page
+            goToPage: function(pageNumber) {
+                if (flipbook && pageNumber >= 1 && pageNumber <= totalPages) {
+                    flipbook.turn('page', pageNumber);
+                }
+            },
+            
+            // Called by Flutter to get current page
+            getCurrentPage: function() {
+                return currentPage;
+            },
+            
+            // Called by Flutter to check if ready
+            isReady: function() {
+                return isInitialized;
+            }
+        };
+        
+        // Initialize flipbook
+        function loadFlipbook() {
+            const $flipbook = $('#flipbook');
+            
+            // Clear existing content
+            $flipbook.empty();
+            
+            // Add pages
+            pages.forEach((pageData, index) => {
+                const pageNumber = index + 1;
+                const pageHtml = `
+                    <div class="page" data-page="${pageNumber}">
+                        <img src="${pageData.imageUrl}" alt="Page ${pageNumber}" 
+                             onload="onPageImageLoad(${pageNumber})"
+                             onerror="onPageImageError(${pageNumber})">
+                        <div class="page-number">${pageNumber}</div>
+                    </div>
+                `;
+                $flipbook.append(pageHtml);
+            });
+            
+            // Initialize Turn.js
+            $flipbook.turn({
+                width: $flipbook.parent().width(),
+                height: $flipbook.parent().height(),
+                autoCenter: true,
+                acceleration: true,
+                gradients: true,
+                elevation: 50,
+                duration: 600,
+                pages: totalPages,
+                when: {
+                    turning: function(event, page, view) {
+                        console.log('🔄 Turning to page:', page);
+                        onPageTurning(page);
+                    },
+                    turned: function(event, page, view) {
+                        console.log('✅ Turned to page:', page);
+                        onPageTurned(page);
+                    }
+                }
+            });
+            
+            flipbook = $flipbook;
+            isInitialized = true;
+            updateControls();
+            
+            // Notify Flutter that flipbook is ready
+            notifyFlutter('flipbook_ready', { totalPages: totalPages });
+        }
+        
+        // Page event handlers
+        function onPageTurning(page) {
+            currentPage = page;
+            updateControls();
+            
+            // Notify Flutter about page change
+            notifyFlutter('page_turning', { 
+                page: page, 
+                totalPages: totalPages 
+            });
+        }
+        
+        function onPageTurned(page) {
+            currentPage = page;
+            updateControls();
+            
+            // Notify Flutter about page change completed
+            notifyFlutter('page_turned', { 
+                page: page, 
+                totalPages: totalPages 
+            });
+        }
+        
+        function onPageImageLoad(pageNumber) {
+            console.log('✅ Page', pageNumber, 'image loaded');
+            notifyFlutter('page_image_loaded', { page: pageNumber });
+        }
+        
+        function onPageImageError(pageNumber) {
+            console.log('❌ Page', pageNumber, 'image failed to load');
+            notifyFlutter('page_image_error', { page: pageNumber });
+        }
+        
+        // Navigation functions
+        function previousPage() {
+            if (flipbook && currentPage > 1) {
+                flipbook.turn('previous');
+            }
+        }
+        
+        function nextPage() {
+            if (flipbook && currentPage < totalPages) {
+                flipbook.turn('next');
+            }
+        }
+        
+        // Update control buttons
+        function updateControls() {
+            const prevBtn = document.getElementById('prevBtn');
+            const nextBtn = document.getElementById('nextBtn');
+            const pageInfo = document.getElementById('pageInfo');
+            
+            if (prevBtn) prevBtn.disabled = currentPage <= 1;
+            if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
+            if (pageInfo) pageInfo.textContent = `Trang ${currentPage}/${totalPages}`;
+        }
+        
+        // Flutter communication
+        function notifyFlutter(event, data) {
+            try {
+                // For Flutter WebView communication
+                if (window.flutter_inappwebview) {
+                    window.flutter_inappwebview.callHandler('turnjs_event', {
+                        event: event,
+                        data: data
+                    });
+                }
+                
+                // For Flutter Web
+                if (window.parent && window.parent.postMessage) {
+                    window.parent.postMessage({
+                        type: 'turnjs_event',
+                        event: event,
+                        data: data
+                    }, '*');
+                }
+                
+                console.log('📤 Notified Flutter:', event, data);
+            } catch (error) {
+                console.error('❌ Failed to notify Flutter:', error);
+            }
+        }
+        
+        // Handle window resize
+        window.addEventListener('resize', function() {
+            if (flipbook) {
+                const container = flipbook.parent();
+                flipbook.turn('size', container.width(), container.height());
+            }
+        });
+        
+        // Initialize when DOM is ready
+        $(document).ready(function() {
+            console.log('🚀 Turn.js flipbook ready');
+            notifyFlutter('dom_ready', {});
+        });
+    </script>
+</body>
+</html>

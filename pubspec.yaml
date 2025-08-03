@@ -54,5 +54,6 @@ flutter:
     - assets/models/
     - assets/Build/WebGL/
     - assets/Build/WebGL/Build/
+    - assets/turnjs/
 
 
